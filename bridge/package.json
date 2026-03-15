@@ -1,0 +1,23 @@
+{
+  "name": "obsidian-companion-bridge",
+  "version": "0.1.0",
+  "description": "MCP Bridge for Obsidian Companion Plugin",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "obsidian-companion": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --clean --dts",
+    "dev": "tsup src/index.ts --format esm --watch --sourcemap",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.3"
+  }
+}

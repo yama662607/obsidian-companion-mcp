@@ -1,0 +1,24 @@
+{
+    "handshakeResponse": {
+        "id": "handshake-1",
+        "jsonrpc": "2.0",
+        "protocolVersion": "1.0.0",
+        "result": {
+            "capabilities": [
+                "semantic.search",
+                "editor.getContext"
+            ]
+        }
+    },
+    "errorResponse": {
+        "id": "error-1",
+        "jsonrpc": "2.0",
+        "error": {
+            "code": "UNAVAILABLE",
+            "message": "Plugin unavailable",
+            "data": {
+                "correlationId": "corr-001"
+            }
+        }
+    }
+}
