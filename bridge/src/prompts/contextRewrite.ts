@@ -1,18 +1,15 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 
 export function registerContextRewritePrompt(server: McpServer): void {
     server.registerPrompt(
         "workflow_context_rewrite",
         {
-            name: "Context-aware Rewrite",
+            title: "Context-aware Rewrite",
             description: "Rewrite currently selected text while preserving local context",
-            arguments: [
-                {
-                    name: "style",
-                    description: "Desired writing style",
-                    required: false,
-                },
-            ],
+            argsSchema: {
+                style: z.string().min(1).optional(),
+            },
         },
         async (args) => ({
             messages: [

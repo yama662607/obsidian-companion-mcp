@@ -2,7 +2,23 @@
   "name": "obsidian-companion-plugin",
   "version": "0.1.0",
   "description": "Obsidian Companion Plugin for Semantic Intelligence",
+  "author": "Daisuke Yamashiki",
+  "license": "MIT",
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "mcp",
+    "semantic-search"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yama662607/obsidian-companion-mcp.git",
+    "directory": "plugin"
+  },
   "main": "main.js",
+  "exports": {
+    ".": "./main.js"
+  },
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "node esbuild.config.mjs production"

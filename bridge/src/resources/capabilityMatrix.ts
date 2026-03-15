@@ -3,16 +3,16 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 export function registerCapabilityMatrixResource(server: McpServer): void {
     server.registerResource(
         "capability_matrix",
+        "capability://matrix",
         {
-            uri: "capability://matrix",
-            name: "Capability Matrix",
+            title: "Capability Matrix",
             description: "Tool/Resource/Prompt classification matrix",
             mimeType: "application/json",
         },
-        async () => ({
+        async (uri) => ({
             contents: [
                 {
-                    uri: "capability://matrix",
+                    uri: uri.toString(),
                     mimeType: "application/json",
                     text: JSON.stringify(
                         {

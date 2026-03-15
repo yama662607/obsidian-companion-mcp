@@ -6,11 +6,13 @@ export interface ToolTextContent {
 }
 
 export interface ToolSuccess<TData> {
+    [key: string]: unknown;
     content: ToolTextContent[];
     structuredContent: TData;
 }
 
 export interface ToolFailure {
+    [key: string]: unknown;
     isError: true;
     content: ToolTextContent[];
     structuredContent: {

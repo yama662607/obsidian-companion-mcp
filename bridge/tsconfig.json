@@ -1,12 +1,15 @@
 {
   "compilerOptions": {
     "target": "ESNext",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "outDir": "dist",
     "rootDir": "..",
     "strict": true,
     "esModuleInterop": true,
+    "types": [
+      "node"
+    ],
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },

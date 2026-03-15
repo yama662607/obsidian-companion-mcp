@@ -2,8 +2,24 @@
   "name": "obsidian-companion-bridge",
   "version": "0.1.0",
   "description": "MCP Bridge for Obsidian Companion Plugin",
+  "author": "Daisuke Yamashiki",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "obsidian",
+    "bridge",
+    "ai-agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yama662607/obsidian-companion-mcp.git",
+    "directory": "bridge"
+  },
   "type": "module",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
   "bin": {
     "obsidian-companion": "dist/index.js"
   },
@@ -17,6 +33,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@types/node": "^20.19.0",
     "tsup": "^8.3.5",
     "typescript": "^5.7.3"
   }

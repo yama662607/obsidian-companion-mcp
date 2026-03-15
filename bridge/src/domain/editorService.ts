@@ -1,6 +1,7 @@
 import { DomainError } from "./errors";
 
 export interface EditorContext {
+    [key: string]: unknown;
     activeFile: string | null;
     cursor: { line: number; ch: number } | null;
     selection: string;

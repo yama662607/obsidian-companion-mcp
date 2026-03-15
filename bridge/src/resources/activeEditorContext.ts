@@ -3,16 +3,16 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 export function registerActiveEditorContextResource(server: McpServer): void {
     server.registerResource(
         "active_editor_context",
+        "context://active-editor",
         {
-            uri: "context://active-editor",
-            name: "Active Editor Context",
+            title: "Active Editor Context",
             description: "Read-only snapshot of active editor state",
             mimeType: "application/json",
         },
-        async () => ({
+        async (uri) => ({
             contents: [
                 {
-                    uri: "context://active-editor",
+                    uri: uri.toString(),
                     mimeType: "application/json",
                     text: JSON.stringify(
                         {

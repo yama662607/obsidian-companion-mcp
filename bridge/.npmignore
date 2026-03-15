@@ -1,0 +1,20 @@
+# Sensitive files
+.env
+.npmrc
+*.key
+*.pem
+*.cert
+
+# VCS and OS
+.git
+.gitignore
+.DS_Store
+
+# Logs and coverage
+*.log
+coverage
+
+# Sources and tests not needed in package
+src/
+scripts/
+**/*.test.*

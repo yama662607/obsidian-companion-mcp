@@ -3,16 +3,16 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 export function registerSchemaSummaryResource(server: McpServer): void {
     server.registerResource(
         "schema_summary",
+        "schema://tool-inputs",
         {
-            uri: "schema://tool-inputs",
-            name: "Tool Input Schemas",
+            title: "Tool Input Schemas",
             description: "Summary of strict input schema policy for bridge tools",
             mimeType: "application/json",
         },
-        async () => ({
+        async (uri) => ({
             contents: [
                 {
-                    uri: "schema://tool-inputs",
+                    uri: uri.toString(),
                     mimeType: "application/json",
                     text: JSON.stringify(
                         {

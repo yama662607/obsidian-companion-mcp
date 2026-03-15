@@ -155,6 +155,14 @@ bridge-start:
 plugin-build:
     cd {{ PLUGIN_DIR }} && {{ pm }} run build
 
+# Prepare publish-ready plugin release assets in dist/plugin-release
+plugin-release-prepare:
+    @bash scripts/release/prepare-plugin-release.sh
+
+# Install plugin into an Obsidian vault for pre-release real-device testing
+plugin-install-local vault_path:
+    @bash scripts/release/install-plugin-to-vault.sh "{{ vault_path }}"
+
 # =============================================================================
 # Dependency Management
 # =============================================================================
