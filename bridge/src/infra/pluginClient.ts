@@ -14,7 +14,10 @@ export class PluginClient {
   private availability: Availability = "unavailable";
   private retryCount = 0;
 
-  constructor(private readonly maxRetries = 3) {}
+  constructor(
+    private readonly maxRetries = 3,
+    private readonly expectedProtocolVersion = PROTOCOL_VERSION,
+  ) {}
 
   async connect(apiKey: string): Promise<HandshakeResult> {
     if (!apiKey) {
@@ -35,6 +38,10 @@ export class PluginClient {
         ],
         availability: "normal",
       };
+      if (PROTOCOL_VERSION !== this.expectedProtocolVersion) {
+        this.availability = "degraded";
+        throw new DomainError("CONFLICT", "Protocol version mismatch");
+      }
       this.availability = "normal";
       logInfo(`plugin connected on retry ${this.retryCount}`);
       return result;

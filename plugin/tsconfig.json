@@ -10,5 +10,5 @@
     "lib": ["DOM", "ESNext"],
     "types": ["node", "obsidian"]
   },
-  "include": ["**/*.ts"]
+  "include": ["**/*.ts", "../shared/**/*.ts"]
 }
