@@ -5,26 +5,26 @@ import { DomainError } from "../domain/errors";
 import type { SemanticService } from "../domain/semanticService";
 
 export function registerSemanticSearchTool(server: McpServer, semanticService: SemanticService): void {
-  server.registerTool(
-    "semantic_search",
-    {
-      description: "Search notes semantically and return ranked matches with snippets.",
-      inputSchema: z.object({
-        query: z.string().min(1).describe("Semantic search query text"),
-        limit: z.number().int().min(1).max(50).default(10).describe("Maximum number of ranked matches"),
-      }),
-      annotations: {
-        readOnlyHint: true,
-      },
-    },
-    async (params) => {
-      try {
-        const matches = semanticService.search(params.query, params.limit);
-        return okResult(`Found ${matches.length} matches`, { matches });
-      } catch (error) {
-        const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "semantic search failed");
-        return errorResult(domainError);
-      }
-    },
-  );
+    server.registerTool(
+        "semantic_search",
+        {
+            description: "Search notes semantically and return ranked matches with snippets.",
+            inputSchema: z.object({
+                query: z.string().min(1).describe("Semantic search query text"),
+                limit: z.number().int().min(1).max(50).default(10).describe("Maximum number of ranked matches"),
+            }),
+            annotations: {
+                readOnlyHint: true,
+            },
+        },
+        async (params) => {
+            try {
+                const matches = semanticService.search(params.query, params.limit);
+                return okResult(`Found ${matches.length} matches`, { matches });
+            } catch (error) {
+                const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "semantic search failed");
+                return errorResult(domainError);
+            }
+        },
+    );
 }

@@ -7,8 +7,17 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "lib": ["DOM", "ESNext"],
-    "types": ["node", "obsidian"]
+    "lib": [
+      "DOM",
+      "ESNext"
+    ],
+    "types": [
+      "node",
+      "obsidian"
+    ]
   },
-  "include": ["**/*.ts", "../shared/**/*.ts"]
+  "include": [
+    "**/*.ts",
+    "../shared/**/*.ts"
+  ]
 }
