@@ -18,9 +18,15 @@ function walk(dirPath, collector = []) {
 
 export function extractToolRegistrations(source) {
     const tools = [];
-    const toolRegex = /registerTool\s*\(\s*"([^"]+)"\s*,\s*\{([\s\S]*?)\}\s*(?:,|\))/g;
-    for (const match of source.matchAll(toolRegex)) {
-        tools.push({ name: match[1], optionsBlock: match[2] });
+    const startRegex = /registerTool\s*\(\s*"([^"]+)"/g;
+
+    for (const match of source.matchAll(startRegex)) {
+        const name = match[1];
+        const start = match.index ?? 0;
+        const window = source.slice(start, start + 2500);
+        const endIndex = window.indexOf("async ");
+        const optionsBlock = endIndex >= 0 ? window.slice(0, endIndex) : window;
+        tools.push({ name, optionsBlock });
     }
     return tools;
 }
