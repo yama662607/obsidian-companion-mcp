@@ -246,6 +246,9 @@ test("mcp e2e: active context fields are semantically plausible", async (t) => {
     assert.ok(!result.isError);
     assert.ok(typeof result.structuredContent.noActiveEditor === "boolean");
     assert.ok(typeof result.structuredContent.degraded === "boolean");
+    assert.ok(typeof result.structuredContent.editorState === "string");
+    assert.ok(typeof result.structuredContent.selection === "string");
+    assert.ok(typeof result.structuredContent.content === "string");
 
     if (result.structuredContent.noActiveEditor === false) {
         const content = typeof result.structuredContent.content === "string"
@@ -259,5 +262,8 @@ test("mcp e2e: active context fields are semantically plausible", async (t) => {
             assert.ok(cursor.ch >= 0);
             assert.ok(cursor.line < lineCount);
         }
+        assert.equal(result.structuredContent.editorState, "active");
+    } else {
+        assert.equal(result.structuredContent.editorState, "none");
     }
 });

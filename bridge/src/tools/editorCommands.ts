@@ -19,15 +19,22 @@ export function registerEditorTools(server: McpServer, editorService: EditorServ
         async () => {
             try {
                 const result = await editorService.getContext();
+                const normalizedContext = {
+                    activeFile: typeof result.context.activeFile === "string" ? result.context.activeFile : null,
+                    cursor: result.context.cursor ?? null,
+                    selection: typeof result.context.selection === "string" ? result.context.selection : "",
+                    content: typeof result.context.content === "string" ? result.context.content : "",
+                };
                 const summary = result.noActiveEditor
                     ? `No active editor (${result.degraded ? "degraded" : "normal"})`
                     : `Retrieved active editor context (${result.degraded ? "degraded" : "normal"})`;
 
                 return okResult(summary, {
-                    ...result.context,
+                    ...normalizedContext,
                     degraded: result.degraded,
                     degradedReason: result.degradedReason,
                     noActiveEditor: result.noActiveEditor,
+                    editorState: result.noActiveEditor ? "none" : "active",
                 });
             } catch (error) {
                 const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "context retrieval failed");

@@ -13,6 +13,12 @@ export function registerActiveEditorContextResource(server: McpServer, editorSer
         },
         async (uri) => {
             const result = await editorService.getContext();
+            const normalizedContext = {
+                activeFile: typeof result.context.activeFile === "string" ? result.context.activeFile : null,
+                cursor: result.context.cursor ?? null,
+                selection: typeof result.context.selection === "string" ? result.context.selection : "",
+                content: typeof result.context.content === "string" ? result.context.content : "",
+            };
 
             return {
                 contents: [
@@ -21,10 +27,11 @@ export function registerActiveEditorContextResource(server: McpServer, editorSer
                         mimeType: "application/json",
                         text: JSON.stringify(
                             {
-                                ...result.context,
+                                ...normalizedContext,
                                 degraded: result.degraded,
                                 degradedReason: result.degradedReason,
                                 noActiveEditor: result.noActiveEditor,
+                                editorState: result.noActiveEditor ? "none" : "active",
                             },
                             null,
                             2,
