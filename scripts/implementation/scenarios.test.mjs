@@ -33,6 +33,14 @@ test("semantic search returns deterministic structured shape", () => {
 test("note and metadata fallback behavior exists", () => {
     const source = read("bridge/src/domain/noteService.ts");
     assert.match(source, /degraded: true/);
+    assert.match(source, /degradedReason/);
     assert.match(source, /updateMetadata/);
     assert.match(source, /notes\.read|notes\.write/);
+});
+
+test("fallback storage applies frontmatter for metadata round-trip", () => {
+    const source = read("bridge/src/infra/fallbackStorage.ts");
+    assert.match(source, /renderFrontmatter/);
+    assert.match(source, /applyFrontmatter/);
+    assert.match(source, /stripFrontmatter/);
 });
