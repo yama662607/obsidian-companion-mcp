@@ -1,54 +1,60 @@
-# Obsidian Plugin Release and Device Test
+# Obsidianプラグイン公開前テスト手順
 
-This runbook prepares the plugin for release and validates installation on a local Obsidian vault before publication.
+このドキュメントは、公開前に必要なアセット準備と実機導入確認の最短手順をまとめたランブックです。
 
-## 1. Prepare release artifacts
+## 1. 公開アセットの準備
 
-Run from repository root:
+リポジトリルートで実行します。
 
 ```bash
 just plugin-release-prepare
 ```
 
-Expected output directory:
+出力先（想定）:
 
 - dist/plugin-release/main.js
 - dist/plugin-release/manifest.json
 - dist/plugin-release/versions.json
-- dist/plugin-release/styles.css (only if present)
+- dist/plugin-release/styles.css（存在する場合のみ）
 
-## 2. Real-device pre-release test (local vault install)
+## 2. 実機導入テスト（ローカルVault）
 
-Install the plugin into your target vault:
+対象Vaultへプラグインを導入します。
 
 ```bash
 just plugin-install-local /absolute/path/to/YourVault
 ```
 
-Then open Obsidian and verify:
+その後、Obsidianアプリで以下を確認します。
 
-1. Settings -> Community plugins.
-2. Enable Community plugins if disabled.
-3. Confirm plugin "obsidian-companion-mcp" appears in installed list and can be enabled.
-4. Enable plugin and restart Obsidian.
-5. Validate expected behavior:
-   - Plugin loads without startup errors.
-   - Editor context features are available.
-   - Bridge can connect locally.
+1. Settings -> Community plugins を開く
+2. Community plugins が無効なら有効化
+3. obsidian-companion-mcp がインストール一覧にあり、有効化できる
+4. 有効化して Obsidian を再起動する
+5. 期待動作を確認する
+   - 起動時エラーが出ない
+   - エディタ関連機能が利用できる
+   - bridge から接続できる
 
-## 3. Publish readiness checks
+## 3. 公開前チェック
 
-Before creating GitHub Release:
+GitHub Release 作成前に確認します。
 
-- Confirm `plugin/manifest.json` version is in x.y.z format.
-- Confirm GitHub release tag exactly matches `plugin/manifest.json` version.
-- Upload release assets: main.js, manifest.json, styles.css (if present).
-- Keep manifest.json in repository root of the plugin release repository.
+- plugin/manifest.json の version が x.y.z 形式
+- GitHub Release の tag が manifest.json の version と完全一致
+- Release 添付ファイルが main.js / manifest.json / styles.css（任意）
+- plugin公開用リポジトリのルートにも manifest.json がある
 
-## 4. App in-store distribution (Obsidian Community Plugins)
+## 4. Obsidianコミュニティ公開
 
-After initial release assets are published, submit to Obsidian community list:
+初回公開アセットを出した後、community plugins へ申請します。
 
-- Add plugin entry to obsidianmd/obsidian-releases community-plugins.json.
-- Wait for bot validation and review.
-- Address comments by updating the same PR and release assets.
+- obsidianmd/obsidian-releases の community-plugins.json にエントリ追加
+- Bot 検証とレビュー待ち
+- 指摘があれば同じPRと同じRelease系統で更新
+
+## 5. エージェント試験とDual MCPレビュー
+
+Obsidian実利用手順、Companion + Excalidraw を併用したレビューシナリオ、MCP設定例は次を参照してください。
+
+- docs/execution/agent-dual-mcp-review-playbook.md
