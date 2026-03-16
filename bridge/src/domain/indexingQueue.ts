@@ -8,6 +8,14 @@ export class IndexingQueue {
     private queue: IndexJob[] = [];
     private running = false;
 
+    getPendingCount(): number {
+        return this.queue.length;
+    }
+
+    isRunning(): boolean {
+        return this.running;
+    }
+
     enqueue(job: IndexJob): void {
         const existing = this.queue.find((item) => item.path === job.path);
         if (existing && existing.updatedAt >= job.updatedAt) {

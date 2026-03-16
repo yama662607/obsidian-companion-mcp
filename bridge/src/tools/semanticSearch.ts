@@ -19,8 +19,14 @@ export function registerSemanticSearchTool(server: McpServer, semanticService: S
         },
         async (params) => {
             try {
-                const matches = semanticService.search(params.query, params.limit);
-                return okResult(`Found ${matches.length} matches`, { matches });
+                const result = await semanticService.searchWithStatus(params.query, params.limit);
+                const summary = result.matches.length > 0
+                    ? `Found ${result.matches.length} matches`
+                    : result.indexStatus.ready
+                        ? "No semantic matches"
+                        : `Index pending (${result.indexStatus.pendingCount})`;
+
+                return okResult(summary, result);
             } catch (error) {
                 const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "semantic search failed");
                 return errorResult(domainError);

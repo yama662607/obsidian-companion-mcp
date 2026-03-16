@@ -32,7 +32,7 @@ export function createServer(): ServerRuntime {
     const pluginClient = new PluginClient();
     const editorService = new EditorService(pluginClient);
     const semanticService = new SemanticService();
-    const noteService = new NoteService(pluginClient);
+    const noteService = new NoteService(pluginClient, semanticService);
 
     // Registration only: all behavior remains in tools/resources/prompts/domain layers.
     registerSemanticSearchTool(server, semanticService);

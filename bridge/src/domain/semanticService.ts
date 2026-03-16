@@ -37,6 +37,31 @@ export class SemanticService {
         this.queueIndex(path, snippet, updatedAt);
     }
 
+    remove(path: string): void {
+        this.notes.delete(path);
+    }
+
+    getIndexStatus(): { pendingCount: number; indexedCount: number; running: boolean; ready: boolean } {
+        const pendingCount = this.queue.getPendingCount();
+        return {
+            pendingCount,
+            indexedCount: this.notes.size,
+            running: this.queue.isRunning(),
+            ready: pendingCount === 0,
+        };
+    }
+
+    async searchWithStatus(
+        query: string,
+        limit: number,
+    ): Promise<{ matches: Array<{ path: string; score: number; snippet: string }>; indexStatus: { pendingCount: number; indexedCount: number; running: boolean; ready: boolean } }> {
+        await this.flushIndex(Math.max(limit * 2, 10));
+        return {
+            matches: this.search(query, limit),
+            indexStatus: this.getIndexStatus(),
+        };
+    }
+
     search(query: string, limit: number): Array<{ path: string; score: number; snippet: string }> {
         const q = query.toLowerCase();
         return Array.from(this.notes.values())

@@ -1,9 +1,13 @@
 import { DomainError } from "./errors";
 import * as fallback from "../infra/fallbackStorage";
 import type { PluginClient } from "../infra/pluginClient";
+import type { SemanticService } from "./semanticService";
 
 export class NoteService {
-    constructor(private readonly pluginClient: PluginClient) { }
+    constructor(
+        private readonly pluginClient: PluginClient,
+        private readonly semanticService?: SemanticService,
+    ) { }
 
     async read(path: string): Promise<{
         content: string;
@@ -39,10 +43,12 @@ export class NoteService {
 
         try {
             await this.pluginClient.send("notes.write", { path, content });
-            fallback.writeNote(path, content);
+            const record = fallback.writeNote(path, content);
+            this.semanticService?.upsert(path, record.content, Date.now());
             return { path, degraded: false, degradedReason: null };
         } catch {
-            fallback.writeNote(path, content);
+            const record = fallback.writeNote(path, content);
+            this.semanticService?.upsert(path, record.content, Date.now());
             return { path, degraded: true, degradedReason: "plugin_unavailable" };
         }
     }
@@ -50,9 +56,17 @@ export class NoteService {
     async delete(path: string): Promise<{ deleted: boolean; degraded: boolean; degradedReason: string | null }> {
         try {
             await this.pluginClient.send("notes.delete", { path });
-            return { deleted: fallback.deleteNote(path), degraded: false, degradedReason: null };
+            const deleted = fallback.deleteNote(path);
+            if (deleted) {
+                this.semanticService?.remove(path);
+            }
+            return { deleted, degraded: false, degradedReason: null };
         } catch {
-            return { deleted: fallback.deleteNote(path), degraded: true, degradedReason: "plugin_unavailable" };
+            const deleted = fallback.deleteNote(path);
+            if (deleted) {
+                this.semanticService?.remove(path);
+            }
+            return { deleted, degraded: true, degradedReason: "plugin_unavailable" };
         }
     }
 
@@ -69,9 +83,11 @@ export class NoteService {
         try {
             await this.pluginClient.send("metadata.update", { path, metadata });
             const record = fallback.updateMetadata(path, metadata);
+            this.semanticService?.upsert(path, record.content, Date.now());
             return { path, metadata: record.metadata, degraded: false, degradedReason: null };
         } catch {
             const record = fallback.updateMetadata(path, metadata);
+            this.semanticService?.upsert(path, record.content, Date.now());
             return {
                 path,
                 metadata: record.metadata,
