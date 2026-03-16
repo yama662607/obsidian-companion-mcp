@@ -1,11 +1,11 @@
-# obsidian-companion-bridge
+# @yama662607/obsidian-companion-bridge
 
 MCP bridge package for Obsidian Companion.
 
 ## Installation
 
 ```bash
-npm install obsidian-companion-bridge
+npm install @yama662607/obsidian-companion-bridge
 ```
 
 ## Usage

@@ -1,4 +1,4 @@
-# obsidian-companion-plugin
+# @yama662607/obsidian-companion-plugin
 
 Obsidian plugin package for Companion MCP integration.
 

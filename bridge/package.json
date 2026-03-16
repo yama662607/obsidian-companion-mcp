@@ -1,5 +1,5 @@
 {
-  "name": "obsidian-companion-bridge",
+  "name": "@yama662607/obsidian-companion-bridge",
   "version": "0.1.0",
   "description": "MCP Bridge for Obsidian Companion Plugin",
   "author": "Daisuke Yamashiki",

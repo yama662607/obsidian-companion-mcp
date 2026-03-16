@@ -52,6 +52,7 @@ test("mcp e2e: refactored tool surface is discoverable", async (t) => {
 
     const listed = await session.client.listTools();
     const names = listed.tools.map((tool) => tool.name);
+    const toolByName = new Map(listed.tools.map((tool) => [tool.name, tool]));
 
     assert.ok(names.includes("search_notes_semantic"));
     assert.ok(names.includes("create_note"));
@@ -61,6 +62,24 @@ test("mcp e2e: refactored tool surface is discoverable", async (t) => {
     assert.ok(names.includes("update_note_metadata"));
     assert.ok(!names.includes("manage_note"));
     assert.ok(!names.includes("manage_metadata"));
+
+    const deleteTool = toolByName.get("delete_note");
+    assert.ok(deleteTool);
+    assert.equal(deleteTool.annotations?.destructiveHint, true);
+
+    const deleteInputProperties = deleteTool.inputSchema?.properties
+        ? Object.keys(deleteTool.inputSchema.properties)
+        : [];
+    assert.deepEqual(deleteInputProperties, ["path"]);
+    assert.deepEqual(deleteTool.inputSchema?.required, ["path"]);
+
+    const getTool = toolByName.get("get_note");
+    assert.ok(getTool);
+    assert.equal(getTool.annotations?.readOnlyHint, true);
+
+    const updateMetadataTool = toolByName.get("update_note_metadata");
+    assert.ok(updateMetadataTool);
+    assert.equal(updateMetadataTool.annotations?.idempotentHint, true);
 });
 
 test("mcp e2e: note, metadata, and semantic flow behaves consistently", async (t) => {
