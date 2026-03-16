@@ -9,7 +9,7 @@
 1. plugin availability を起動時 handshake で確定するようになりました。
 2. editor 系ツールの応答に degraded と degradedReason が含まれます。
 3. note / metadata 系応答に degradedReason が含まれます。
-4. semantic_search 応答に indexStatus メタ情報が含まれます。
+4. search_notes_semantic 応答に indexStatus メタ情報が含まれます。
 5. ノート系ツールは create/get/update/delete/update_metadata の単機能分割へ変更されました。
 
 ## 互換性メモ

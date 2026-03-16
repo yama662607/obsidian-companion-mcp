@@ -29,6 +29,7 @@ test("semantic responses expose index readiness status", () => {
     const semanticTool = read("bridge/src/tools/semanticSearch.ts");
     const semanticService = read("bridge/src/domain/semanticService.ts");
 
+    assert.match(semanticTool, /search_notes_semantic/);
     assert.match(semanticTool, /indexStatus/);
     assert.match(semanticTool, /Index pending|No semantic matches/);
     assert.match(semanticService, /getIndexStatus\(/);

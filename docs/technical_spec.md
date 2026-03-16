@@ -23,7 +23,7 @@
   }
   ```
 
-### `semantic_search`
+### `search_notes_semantic`
 - **Params**: `{ "query": "string", "limit": 10 }`
 - **Returns**: Array of matches with scores and snippets.
 

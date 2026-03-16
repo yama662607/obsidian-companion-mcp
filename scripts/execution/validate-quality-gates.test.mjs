@@ -11,7 +11,7 @@ import {
 test("extractToolRegistrations finds tool metadata blocks", () => {
     const source = `
 server.registerTool(
-  "semantic_search",
+  "search_notes_semantic",
   {
     annotations: {
       readOnlyHint: true,
@@ -27,7 +27,7 @@ server.registerTool(
 
     const tools = extractToolRegistrations(source);
     assert.equal(tools.length, 1);
-    assert.equal(tools[0].name, "semantic_search");
+    assert.equal(tools[0].name, "search_notes_semantic");
     assert.match(tools[0].optionsBlock, /readOnlyHint: true/);
 });
 

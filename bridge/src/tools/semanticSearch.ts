@@ -6,7 +6,7 @@ import type { SemanticService } from "../domain/semanticService";
 
 export function registerSemanticSearchTool(server: McpServer, semanticService: SemanticService): void {
     server.registerTool(
-        "semantic_search",
+        "search_notes_semantic",
         {
             description: "Search notes semantically and return ranked matches with snippets.",
             inputSchema: z.object({

@@ -11,7 +11,7 @@
 ## 運用上の改善
 
 - degradedReason による degraded 状態の可観測性を強化
-- semantic_search 応答に indexStatus メタを追加
+- search_notes_semantic 応答に indexStatus メタを追加
 - 実機 E2E / Dual MCP E2E の release gate 判定基準を追加
 
 ## 互換性・挙動変更

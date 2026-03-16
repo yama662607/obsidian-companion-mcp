@@ -27,6 +27,7 @@ test("editor tools expose degraded and no-active-editor signals", () => {
 test("semantic search returns deterministic structured shape", () => {
     const source = read("bridge/src/tools/semanticSearch.ts");
     assert.match(source, /okResult\(/);
+    assert.match(source, /search_notes_semantic/);
     assert.match(source, /matches/);
     assert.match(source, /indexStatus/);
     assert.match(source, /Index pending|No semantic matches/);

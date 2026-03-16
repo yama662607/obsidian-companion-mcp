@@ -18,7 +18,7 @@ export function registerSearchThenInsertPrompt(server: McpServer): void {
                     content: {
                         type: "text",
                         text: [
-                            `Run semantic_search with query: ${args.query}`,
+                            `Run search_notes_semantic with query: ${args.query}`,
                             "Summarize the highest-ranked result in one sentence.",
                             "Insert that summary via insert_at_cursor.",
                         ].join("\n"),

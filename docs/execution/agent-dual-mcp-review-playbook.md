@@ -120,7 +120,7 @@ npx 不可なのは plugin 本体であり、bridge は公開形態次第で npx
 
 以下が見えれば、bridge の登録は概ね成功です。
 
-- semantic_search
+- search_notes_semantic
 - get_active_context
 - insert_at_cursor
 - replace_range

@@ -17,7 +17,7 @@ export function registerCapabilityMatrixResource(server: McpServer): void {
                     text: JSON.stringify(
                         {
                             tools: [
-                                "semantic_search",
+                                "search_notes_semantic",
                                 "insert_at_cursor",
                                 "replace_range",
                                 "create_note",

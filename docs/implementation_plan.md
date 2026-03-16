@@ -25,7 +25,7 @@ A hybrid MCP server and Obsidian plugin that provides vault-wide semantic intell
   - **Standalone Option**: Maintain a fallback for basic file CRUD if the plugin is not responsive.
 
 ### Component 3: Toolset
-- `semantic_search`: Meaning-based search across the entire vault.
+- `search_notes_semantic`: Meaning-based search across the entire vault.
 - `get_active_context`: Retrieve current file, cursor position, and selection.
 - `insert_at_cursor`: Insert text precisely where the user is typing.
 - `create_note`: Create a markdown note.
