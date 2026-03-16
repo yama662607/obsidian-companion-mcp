@@ -12,8 +12,10 @@ import { registerSchemaSummaryResource } from "./resources/schemaSummary";
 import { registerFallbackBehaviorResource } from "./resources/fallbackBehavior";
 import { registerActiveEditorContextResource } from "./resources/activeEditorContext";
 import { registerRuntimeStatusResource } from "./resources/runtimeStatus";
+import { registerReviewChecklistResource } from "./resources/reviewChecklist";
 import { registerContextRewritePrompt } from "./prompts/contextRewrite";
 import { registerSearchThenInsertPrompt } from "./prompts/searchThenInsert";
+import { registerAgentRuntimeReviewPrompt } from "./prompts/agentRuntimeReview";
 import { logError, logInfo } from "./infra/logger";
 import { DomainError } from "./domain/errors";
 
@@ -43,9 +45,11 @@ export function createServer(): ServerRuntime {
     registerFallbackBehaviorResource(server);
     registerActiveEditorContextResource(server, editorService);
     registerRuntimeStatusResource(server, pluginClient);
+    registerReviewChecklistResource(server);
 
     registerContextRewritePrompt(server);
     registerSearchThenInsertPrompt(server);
+    registerAgentRuntimeReviewPrompt(server);
 
     return { server, pluginClient };
 }

@@ -134,3 +134,36 @@ test("mcp e2e: runtime status resource is readable", async (t) => {
     assert.ok(["normal", "degraded", "unavailable"].includes(payload.availability));
     assert.ok(Object.hasOwn(payload, "retryCount"));
 });
+
+test("mcp e2e: review checklist resource and agent review prompt are available", async (t) => {
+    const session = await createMcpClient();
+    t.after(async () => {
+        await session.close();
+    });
+
+    const resources = await session.client.listResources();
+    const resourceUris = resources.resources.map((resource) => resource.uri);
+    assert.ok(resourceUris.includes("review://checklist"));
+
+    const checklist = await session.client.readResource({
+        uri: "review://checklist",
+    });
+    const checklistPayload = JSON.parse(checklist.contents[0].text);
+    assert.ok(Array.isArray(checklistPayload.checklist));
+    assert.ok(checklistPayload.checklist.length >= 4);
+
+    const prompts = await session.client.listPrompts();
+    const promptNames = prompts.prompts.map((prompt) => prompt.name);
+    assert.ok(promptNames.includes("workflow_agent_runtime_review"));
+
+    const loadedPrompt = await session.client.getPrompt({
+        name: "workflow_agent_runtime_review",
+        arguments: {
+            scope: "bridge tool surface",
+            severityThreshold: "medium",
+        },
+    });
+    assert.ok(loadedPrompt.messages.length > 0);
+    assert.ok(loadedPrompt.messages[0].content.type === "text");
+    assert.ok(loadedPrompt.messages[0].content.text.includes("Tool contract quality"));
+});

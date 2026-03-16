@@ -50,6 +50,8 @@ test("tool surface uses split note operations instead of generic manage actions"
 
     assert.match(matrix, /"create_note"/);
     assert.match(matrix, /"update_note_metadata"/);
+    assert.match(matrix, /"review:\/\/checklist"/);
+    assert.match(matrix, /"workflow_agent_runtime_review"/);
 });
 
 test("release gate policy includes dual-mcp e2e go/no-go criteria", () => {

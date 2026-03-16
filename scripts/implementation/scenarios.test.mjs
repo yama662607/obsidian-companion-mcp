@@ -66,3 +66,14 @@ test("note tools are split by decision unit and include metadata updater", () =>
     assert.doesNotMatch(source, /"manage_note"/);
     assert.doesNotMatch(source, /"manage_metadata"/);
 });
+
+test("review support modules are registered for agent workflows", () => {
+    const serverSource = read("bridge/src/server.ts");
+    const resourceSource = read("bridge/src/resources/reviewChecklist.ts");
+    const promptSource = read("bridge/src/prompts/agentRuntimeReview.ts");
+
+    assert.match(serverSource, /registerReviewChecklistResource/);
+    assert.match(serverSource, /registerAgentRuntimeReviewPrompt/);
+    assert.match(resourceSource, /review:\/\/checklist/);
+    assert.match(promptSource, /workflow_agent_runtime_review/);
+});
