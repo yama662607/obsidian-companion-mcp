@@ -28,8 +28,11 @@ A hybrid MCP server and Obsidian plugin that provides vault-wide semantic intell
 - `semantic_search`: Meaning-based search across the entire vault.
 - `get_active_context`: Retrieve current file, cursor position, and selection.
 - `insert_at_cursor`: Insert text precisely where the user is typing.
-- `manage_note`: Full CRUD operations for `.md` files (read, write, delete).
-- `manage_metadata`: Edit frontmatter and tags with semantic validation.
+- `create_note`: Create a markdown note.
+- `get_note`: Read normalized note content and metadata.
+- `update_note_content`: Replace note content deterministically.
+- `delete_note`: Delete a note (destructive).
+- `update_note_metadata`: Patch frontmatter/tags with validation.
 
 ## Verification Plan
 ### PHASE 1: Bridge-Plugin Communication

@@ -50,7 +50,18 @@ test("fallback storage applies frontmatter for metadata round-trip", () => {
 
 test("delete_note keeps single-responsibility input contract", () => {
     const source = read("bridge/src/tools/noteManagement.ts");
+    const schemaSource = read("bridge/src/schemas/notes.ts");
     assert.match(source, /"delete_note"/);
-    assert.match(source, /Vault-relative markdown note path to delete/);
+    assert.match(schemaSource, /Vault-relative markdown note path to delete/);
     assert.doesNotMatch(source, /"delete_note"[\s\S]*action:\s*z\.enum\(/);
+});
+
+test("note tools are split by decision unit and include metadata updater", () => {
+    const source = read("bridge/src/tools/noteManagement.ts");
+    assert.match(source, /"create_note"/);
+    assert.match(source, /"get_note"/);
+    assert.match(source, /"update_note_content"/);
+    assert.match(source, /"update_note_metadata"/);
+    assert.doesNotMatch(source, /"manage_note"/);
+    assert.doesNotMatch(source, /"manage_metadata"/);
 });

@@ -34,12 +34,14 @@ export function extractToolRegistrations(source) {
 export function validateSchemaPolicy(fileSources) {
     const errors = [];
     const boundedLimitRegex = /limit\s*:\s*z\.number\(\)\.[\s\S]*?\.min\(\d+\)[\s\S]*?\.max\(\d+\)/m;
+    const inlineSchemaRegex = /inputSchema\s*:\s*z\.object\s*\(/;
+    const namedSchemaRegex = /inputSchema\s*:\s*[A-Za-z0-9_]*InputSchema\b/;
 
     for (const item of fileSources) {
         const tools = extractToolRegistrations(item.source);
         for (const tool of tools) {
-            if (!/inputSchema\s*:\s*z\.object\s*\(/.test(tool.optionsBlock)) {
-                errors.push(`${item.filePath}:${tool.name} must use z.object for inputSchema`);
+            if (!inlineSchemaRegex.test(tool.optionsBlock) && !namedSchemaRegex.test(tool.optionsBlock)) {
+                errors.push(`${item.filePath}:${tool.name} must use z.object or a named *InputSchema`);
             }
             if (/\blimit\s*:/.test(tool.optionsBlock) && !boundedLimitRegex.test(tool.optionsBlock)) {
                 errors.push(`${item.filePath}:${tool.name} limit must be bounded with min/max`);

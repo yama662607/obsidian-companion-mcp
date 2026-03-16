@@ -36,6 +36,21 @@ test("semantic responses expose index readiness status", () => {
     assert.match(semanticService, /ready: pendingCount === 0/);
 });
 
+test("tool surface uses split note operations instead of generic manage actions", () => {
+    const noteTool = read("bridge/src/tools/noteManagement.ts");
+    const matrix = read("bridge/src/resources/capabilityMatrix.ts");
+
+    assert.match(noteTool, /"create_note"/);
+    assert.match(noteTool, /"get_note"/);
+    assert.match(noteTool, /"update_note_content"/);
+    assert.match(noteTool, /"delete_note"/);
+    assert.match(noteTool, /"update_note_metadata"/);
+    assert.doesNotMatch(noteTool, /"manage_note"/);
+
+    assert.match(matrix, /"create_note"/);
+    assert.match(matrix, /"update_note_metadata"/);
+});
+
 test("release gate policy includes dual-mcp e2e go/no-go criteria", () => {
     const releaseGate = read("docs/execution/release-gate.md");
     assert.match(releaseGate, /Dual MCP|dual mcp/i);

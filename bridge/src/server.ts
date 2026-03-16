@@ -7,7 +7,6 @@ import { NoteService } from "./domain/noteService";
 import { registerSemanticSearchTool } from "./tools/semanticSearch";
 import { registerEditorTools } from "./tools/editorCommands";
 import { registerNoteTool } from "./tools/noteManagement";
-import { registerMetadataTool } from "./tools/metadataManagement";
 import { registerCapabilityMatrixResource } from "./resources/capabilityMatrix";
 import { registerSchemaSummaryResource } from "./resources/schemaSummary";
 import { registerFallbackBehaviorResource } from "./resources/fallbackBehavior";
@@ -38,7 +37,6 @@ export function createServer(): ServerRuntime {
     registerSemanticSearchTool(server, semanticService);
     registerEditorTools(server, editorService);
     registerNoteTool(server, noteService);
-    registerMetadataTool(server, noteService);
 
     registerCapabilityMatrixResource(server);
     registerSchemaSummaryResource(server);

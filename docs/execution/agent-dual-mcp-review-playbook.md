@@ -124,9 +124,11 @@ npx 不可なのは plugin 本体であり、bridge は公開形態次第で npx
 - get_active_context
 - insert_at_cursor
 - replace_range
-- manage_note
+- create_note
+- get_note
+- update_note_content
 - delete_note
-- manage_metadata
+- update_note_metadata
 
 表示されない場合は以下を確認してください。
 

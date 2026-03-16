@@ -18,7 +18,7 @@
 
 1. 起動時 handshake の結果と availability が記録されている
 2. get_active_context / insert_at_cursor / replace_range が実行できる
-3. manage_metadata 後に manage_note read で frontmatter 反映が確認できる
+3. update_note_metadata 後に get_note で frontmatter 反映が確認できる
 4. semantic_search の結果に index 状態メタが含まれる
 5. Dual MCP 同時設定でツール干渉がない
 

@@ -46,7 +46,7 @@ server.registerTool("manage_note", {
     ]);
 
     assert.equal(result.ok, false);
-    assert.ok(result.errors.some((e) => e.includes("must use z.object")));
+    assert.ok(result.errors.some((e) => e.includes("must use z.object or a named *InputSchema")));
     assert.ok(result.errors.some((e) => e.includes("limit must be bounded")));
 });
 

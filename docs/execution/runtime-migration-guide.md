@@ -10,17 +10,17 @@
 2. editor 系ツールの応答に degraded と degradedReason が含まれます。
 3. note / metadata 系応答に degradedReason が含まれます。
 4. semantic_search 応答に indexStatus メタ情報が含まれます。
-5. delete_note は path のみ受け取る入力契約に変更されました。
+5. ノート系ツールは create/get/update/delete/update_metadata の単機能分割へ変更されました。
 
 ## 互換性メモ
 
-1. 互換維持のため、manage_note の delete action は引き続き利用できます。
-2. 破壊操作は delete_note を優先してください。
+1. manage_note / manage_metadata は廃止されました。
+2. 破壊操作は delete_note を利用してください。
 3. semantic の空結果は indexStatus.ready を見て解釈してください。
 
 ## クライアント更新手順
 
-1. delete_note 入力スキーマを path-only へ更新する。
+1. create_note / get_note / update_note_content / delete_note / update_note_metadata に呼び出しを置き換える。
 2. degradedReason を参照してリカバリ分岐を実装する。
 3. semantic 再試行前に indexStatus.pendingCount を確認する。
 

@@ -20,9 +20,11 @@ export function registerCapabilityMatrixResource(server: McpServer): void {
                                 "semantic_search",
                                 "insert_at_cursor",
                                 "replace_range",
-                                "manage_note",
+                                "create_note",
+                                "get_note",
+                                "update_note_content",
                                 "delete_note",
-                                "manage_metadata",
+                                "update_note_metadata",
                             ],
                             resources: [
                                 "capability://matrix",
