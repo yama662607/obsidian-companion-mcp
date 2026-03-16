@@ -88,6 +88,15 @@ Phase 6: 誤検知防止の再判定
 3. UIに見えないが payload に存在する場合は Finding ではなく注記にする
 4. 観測手段不足で断定できない場合は必ず Unknown に分類する
 
+Phase 7: Semantic Correctness 検証（内容妥当性）
+1. create_note で一意文字列を含むノートを作成する
+2. get_note で内容が一致することを確認する
+3. search_notes_semantic で一意文字列検索し、作成ノートがヒットすることを確認する
+4. delete_note で削除後、get_note が NOT_FOUND になることを確認する
+5. get_active_context の値が意味的に妥当かを確認する
+- noActiveEditor=false なら cursor は content の行範囲内
+- noActiveEditor=true なら矛盾する editor 情報を返さない
+
 出力フォーマット（必須）:
 1. Findings（重大度順: High / Medium / Low）
 - 各 finding に以下を含める
@@ -135,3 +144,59 @@ MCP Prompt が使える場合:
 このテンプレートは「実装品質そのもの」ではなく、
 「公開契約としての妥当性と運用時の安全性」を評価するためのものです。
 実装内部の欠陥を網羅するには、別途ソースコードレビュー版テンプレートを併用してください。
+
+## 再レビュー依頼テンプレート（詳細版）
+
+以下は、修正後の再検証を依頼する時にそのまま使えるメッセージです。
+
+```text
+再レビューをお願いします。今回は「応答形式」だけでなく
+「応答内容が実際に正しいか（semantic correctness）」まで検証してください。
+
+前提:
+1. ソースコード非参照（MCP-only）
+2. 最新ビルドで再起動後、新規セッションで実施
+3. UI表示ではなく raw JSON-RPC payload を根拠にする
+4. 断定不能は Unknown に分類する
+
+Preflight（必須）:
+1. サーバー再起動
+2. セッション/キャッシュ破棄
+3. runtime://status 取得（証跡保存）
+4. capability://matrix 取得（公開契約ベースライン保存）
+
+A. 構造検証（形式）
+1. get_note(path: missing)
+2. delete_note(path: missing)
+3. insert_at_cursor(invalid position)
+確認項目:
+- isError
+- structuredContent.code
+- structuredContent.message
+- content.text が JSON error envelope として解釈可能か
+
+B. 内容妥当性検証（意味）
+1. create_note（一意 marker を含む）
+2. get_note で内容一致確認
+3. search_notes_semantic で作成ノートがヒットするか確認
+4. delete_note 実行
+5. get_note が NOT_FOUND になるか確認
+6. get_active_context 実行
+- noActiveEditor=false の場合:
+  - cursor.line >= 0
+  - cursor.ch >= 0
+  - cursor.line < content の行数
+- noActiveEditor=true の場合:
+  - エラーにせず状態が一貫していること
+
+C. 一貫性検証
+1. search_notes_semantic 応答に degraded/degradedReason があるか
+2. capability://matrix の公開名と list 結果が一致するか
+3. destructiveHint/readOnlyHint/idempotentHint の観測可否（不可なら Unknown）
+
+出力:
+1. Findings（High/Medium/Low）
+2. Unknowns
+3. Top 3 Actions
+4. GO / NO-GO（根拠付き）
+```
