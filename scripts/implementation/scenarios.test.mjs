@@ -47,3 +47,10 @@ test("fallback storage applies frontmatter for metadata round-trip", () => {
     assert.match(source, /applyFrontmatter/);
     assert.match(source, /stripFrontmatter/);
 });
+
+test("delete_note keeps single-responsibility input contract", () => {
+    const source = read("bridge/src/tools/noteManagement.ts");
+    assert.match(source, /"delete_note"/);
+    assert.match(source, /Vault-relative markdown note path to delete/);
+    assert.doesNotMatch(source, /"delete_note"[\s\S]*action:\s*z\.enum\(/);
+});

@@ -41,12 +41,11 @@ export function registerNoteTool(server: McpServer, noteService: NoteService): v
         {
             description: "Delete a note by path. This operation is destructive.",
             inputSchema: z.object({
-                action: z.enum(["create", "read", "update", "delete"]),
-                path: z.string().min(1),
-                content: z.string().optional(),
+                path: z.string().min(1).describe("Vault-relative markdown note path to delete"),
             }),
             annotations: {
                 destructiveHint: true,
+                idempotentHint: true,
             },
         },
         async (params) => {
