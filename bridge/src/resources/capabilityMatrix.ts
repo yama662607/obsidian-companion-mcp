@@ -17,7 +17,13 @@ export function registerCapabilityMatrixResource(server: McpServer): void {
                     text: JSON.stringify(
                         {
                             tools: ["semantic_search", "insert_at_cursor", "replace_range", "manage_note", "manage_metadata"],
-                            resources: ["capability://matrix", "schema://tool-inputs", "fallback://behavior", "context://active-editor"],
+                            resources: [
+                                "capability://matrix",
+                                "schema://tool-inputs",
+                                "fallback://behavior",
+                                "context://active-editor",
+                                "runtime://status",
+                            ],
                             prompts: ["workflow_context_rewrite", "workflow_search_then_insert"],
                         },
                         null,

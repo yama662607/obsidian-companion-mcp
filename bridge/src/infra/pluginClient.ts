@@ -10,8 +10,24 @@ import { logInfo } from "./logger";
 
 export type Availability = "normal" | "degraded" | "unavailable";
 
+export type AvailabilityReason =
+    | "startup_not_attempted"
+    | "missing_api_key"
+    | "protocol_mismatch"
+    | "retry_exhausted"
+    | "plugin_unavailable";
+
+export interface PluginRuntimeStatus {
+    availability: Availability;
+    degradedReason: AvailabilityReason | null;
+    retryCount: number;
+    lastCorrelationId: string | null;
+}
+
 export class PluginClient {
     private availability: Availability = "unavailable";
+    private degradedReason: AvailabilityReason | null = "startup_not_attempted";
+    private lastCorrelationId: string | null = null;
     private retryCount = 0;
 
     constructor(
@@ -20,9 +36,12 @@ export class PluginClient {
     ) { }
 
     async connect(apiKey: string): Promise<HandshakeResult> {
+        this.retryCount = 0;
+
         if (!apiKey) {
-            this.availability = "unavailable";
-            throw new DomainError("AUTH", "API key is required to connect plugin");
+            const error = new DomainError("AUTH", "API key is required to connect plugin");
+            this.transition("unavailable", "missing_api_key", error.correlationId);
+            throw error;
         }
 
         while (this.retryCount < this.maxRetries) {
@@ -39,25 +58,38 @@ export class PluginClient {
                 availability: "normal",
             };
             if (PROTOCOL_VERSION !== this.expectedProtocolVersion) {
-                this.availability = "degraded";
-                throw new DomainError("CONFLICT", "Protocol version mismatch");
+                const error = new DomainError("CONFLICT", "Protocol version mismatch");
+                this.transition("degraded", "protocol_mismatch", error.correlationId);
+                throw error;
             }
-            this.availability = "normal";
+            this.transition("normal", null, null);
             logInfo(`plugin connected on retry ${this.retryCount}`);
             return result;
         }
 
-        this.availability = "degraded";
-        throw new DomainError("UNAVAILABLE", "Plugin connection retries exceeded");
+        const error = new DomainError("UNAVAILABLE", "Plugin connection retries exceeded");
+        this.transition("degraded", "retry_exhausted", error.correlationId);
+        throw error;
     }
 
     getAvailability(): Availability {
         return this.availability;
     }
 
+    getRuntimeStatus(): PluginRuntimeStatus {
+        return {
+            availability: this.availability,
+            degradedReason: this.degradedReason,
+            retryCount: this.retryCount,
+            lastCorrelationId: this.lastCorrelationId,
+        };
+    }
+
     async send<TParams, TResult>(method: string, params?: TParams): Promise<TResult> {
         if (this.availability === "unavailable") {
-            throw new DomainError("UNAVAILABLE", "Plugin is unavailable");
+            const error = new DomainError("UNAVAILABLE", "Plugin is unavailable", this.lastCorrelationId ?? undefined);
+            this.transition("unavailable", "plugin_unavailable", error.correlationId);
+            throw error;
         }
 
         const request: JsonRpcRequest<TParams> = {
@@ -83,5 +115,15 @@ export class PluginClient {
             protocolVersion: PROTOCOL_VERSION,
             result: {} as TResult,
         };
+    }
+
+    private transition(
+        availability: Availability,
+        degradedReason: AvailabilityReason | null,
+        correlationId: string | null,
+    ): void {
+        this.availability = availability;
+        this.degradedReason = degradedReason;
+        this.lastCorrelationId = correlationId;
     }
 }

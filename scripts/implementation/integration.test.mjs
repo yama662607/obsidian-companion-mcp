@@ -19,6 +19,17 @@ test("plugin client includes compatibility and degraded-mode transitions", () =>
     const source = fs.readFileSync(sourcePath, "utf8");
 
     assert.match(source, /Protocol version mismatch/);
-    assert.match(source, /this\.availability = "degraded"/);
+    assert.match(source, /transition\("degraded"/);
     assert.match(source, /retryCount/);
+    assert.match(source, /degradedReason/);
+    assert.match(source, /getRuntimeStatus/);
+});
+
+test("server performs startup handshake and registers runtime status resource", () => {
+    const sourcePath = path.join(repoRoot, "bridge", "src", "server.ts");
+    const source = fs.readFileSync(sourcePath, "utf8");
+
+    assert.match(source, /pluginClient\.connect\(/);
+    assert.match(source, /registerRuntimeStatusResource/);
+    assert.match(source, /startup handshake/);
 });
