@@ -168,3 +168,18 @@ test("mcp e2e: review checklist resource and agent review prompt are available",
     assert.ok(loadedPrompt.messages[0].content.type === "text");
     assert.ok(loadedPrompt.messages[0].content.text.includes("Tool contract quality"));
 });
+
+test("mcp e2e: delete_note returns NOT_FOUND for missing note", async (t) => {
+    const session = await createMcpClient();
+    t.after(async () => {
+        await session.close();
+    });
+
+    const result = await session.client.callTool({
+        name: "delete_note",
+        arguments: { path: "e2e/does-not-exist.md" },
+    });
+
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent.code, "NOT_FOUND");
+});

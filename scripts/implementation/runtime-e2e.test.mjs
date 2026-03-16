@@ -29,9 +29,9 @@ test("semantic responses expose index readiness status", () => {
     const semanticTool = read("bridge/src/tools/semanticSearch.ts");
     const semanticService = read("bridge/src/domain/semanticService.ts");
 
-    assert.match(semanticTool, /search_notes_semantic/);
+    assert.match(semanticTool, /TOOL_NAMES\.SEARCH_NOTES_SEMANTIC/);
     assert.match(semanticTool, /indexStatus/);
-    assert.match(semanticTool, /Index pending|No semantic matches/);
+    assert.match(semanticTool, /Index not ready|No semantic matches/);
     assert.match(semanticService, /getIndexStatus\(/);
     assert.match(semanticService, /pendingCount/);
     assert.match(semanticService, /ready: pendingCount === 0/);
@@ -40,18 +40,22 @@ test("semantic responses expose index readiness status", () => {
 test("tool surface uses split note operations instead of generic manage actions", () => {
     const noteTool = read("bridge/src/tools/noteManagement.ts");
     const matrix = read("bridge/src/resources/capabilityMatrix.ts");
+    const toolNames = read("bridge/src/constants/toolNames.ts");
+    const promptNames = read("bridge/src/constants/promptNames.ts");
 
-    assert.match(noteTool, /"create_note"/);
-    assert.match(noteTool, /"get_note"/);
-    assert.match(noteTool, /"update_note_content"/);
-    assert.match(noteTool, /"delete_note"/);
-    assert.match(noteTool, /"update_note_metadata"/);
+    assert.match(noteTool, /TOOL_NAMES\.CREATE_NOTE/);
+    assert.match(noteTool, /TOOL_NAMES\.GET_NOTE/);
+    assert.match(noteTool, /TOOL_NAMES\.UPDATE_NOTE_CONTENT/);
+    assert.match(noteTool, /TOOL_NAMES\.DELETE_NOTE/);
+    assert.match(noteTool, /TOOL_NAMES\.UPDATE_NOTE_METADATA/);
     assert.doesNotMatch(noteTool, /"manage_note"/);
 
-    assert.match(matrix, /"create_note"/);
-    assert.match(matrix, /"update_note_metadata"/);
-    assert.match(matrix, /"review:\/\/checklist"/);
-    assert.match(matrix, /"workflow_agent_runtime_review"/);
+    assert.match(matrix, /TOOL_NAME_LIST/);
+    assert.match(matrix, /RESOURCE_URI_LIST/);
+    assert.match(matrix, /PROMPT_NAME_LIST/);
+    assert.match(toolNames, /"create_note"/);
+    assert.match(toolNames, /"update_note_metadata"/);
+    assert.match(promptNames, /"workflow_agent_runtime_review"/);
 });
 
 test("release gate policy includes dual-mcp e2e go/no-go criteria", () => {
