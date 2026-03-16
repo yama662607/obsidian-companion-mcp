@@ -98,7 +98,7 @@ test("mcp e2e: note, metadata, and semantic flow behaves consistently", async (t
     });
     assert.ok(!readBack.isError);
     assert.equal(readBack.structuredContent.metadata.title, "Runtime Refactor");
-    assert.ok(readBack.structuredContent.content.includes("title: \"Runtime Refactor\""));
+    assert.ok(/title:\s*("Runtime Refactor"|Runtime Refactor)/.test(readBack.structuredContent.content));
 
     const searched = await session.client.callTool({
         name: "search_notes_semantic",
@@ -110,6 +110,7 @@ test("mcp e2e: note, metadata, and semantic flow behaves consistently", async (t
     assert.ok(!searched.isError);
     assert.ok(Array.isArray(searched.structuredContent.matches));
     assert.ok(typeof searched.structuredContent.indexStatus.pendingCount === "number");
+    assert.ok(typeof searched.structuredContent.indexStatus.isEmpty === "boolean");
 
     const deleted = await session.client.callTool({
         name: "delete_note",

@@ -41,20 +41,25 @@ export class SemanticService {
         this.notes.delete(path);
     }
 
-    getIndexStatus(): { pendingCount: number; indexedCount: number; running: boolean; ready: boolean } {
+    getIndexStatus(): { pendingCount: number; indexedCount: number; running: boolean; ready: boolean; isEmpty: boolean } {
         const pendingCount = this.queue.getPendingCount();
+        const indexedCount = this.notes.size;
         return {
             pendingCount,
-            indexedCount: this.notes.size,
+            indexedCount,
             running: this.queue.isRunning(),
             ready: pendingCount === 0,
+            isEmpty: indexedCount === 0,
         };
     }
 
     async searchWithStatus(
         query: string,
         limit: number,
-    ): Promise<{ matches: Array<{ path: string; score: number; snippet: string }>; indexStatus: { pendingCount: number; indexedCount: number; running: boolean; ready: boolean } }> {
+    ): Promise<{
+        matches: Array<{ path: string; score: number; snippet: string }>;
+        indexStatus: { pendingCount: number; indexedCount: number; running: boolean; ready: boolean; isEmpty: boolean };
+    }> {
         await this.flushIndex(Math.max(limit * 2, 10));
         return {
             matches: this.search(query, limit),

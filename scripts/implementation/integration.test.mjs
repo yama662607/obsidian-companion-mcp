@@ -18,9 +18,11 @@ test("plugin client includes compatibility and degraded-mode transitions", () =>
     const sourcePath = path.join(repoRoot, "bridge", "src", "infra", "pluginClient.ts");
     const source = fs.readFileSync(sourcePath, "utf8");
 
-    assert.match(source, /Protocol version mismatch/);
+    assert.match(source, /Protocol version mismatch: expected/);
     assert.match(source, /transition\("degraded"/);
     assert.match(source, /retryCount/);
+    assert.match(source, /for \(let attempt = 1; attempt <= this\.maxRetries; attempt/);
+    assert.match(source, /retry_exhausted/);
     assert.match(source, /degradedReason/);
     assert.match(source, /getRuntimeStatus/);
 });

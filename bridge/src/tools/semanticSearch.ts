@@ -23,8 +23,10 @@ export function registerSemanticSearchTool(server: McpServer, semanticService: S
                 const summary = result.matches.length > 0
                     ? `Found ${result.matches.length} matches`
                     : result.indexStatus.ready
-                        ? "No semantic matches"
-                        : `Index pending (${result.indexStatus.pendingCount})`;
+                        ? (result.indexStatus.isEmpty
+                            ? "Index is empty (no notes indexed)"
+                            : "No semantic matches found")
+                        : `Index not ready (${result.indexStatus.pendingCount} pending)`;
 
                 return okResult(summary, result);
             } catch (error) {

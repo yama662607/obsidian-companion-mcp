@@ -24,6 +24,8 @@ export interface PluginRuntimeStatus {
     lastCorrelationId: string | null;
 }
 
+type HandshakeResultWithVersion = HandshakeResult & { protocolVersion?: string };
+
 export class PluginClient {
     private availability: Availability = "unavailable";
     private degradedReason: AvailabilityReason | null = "startup_not_attempted";
@@ -44,27 +46,39 @@ export class PluginClient {
             throw error;
         }
 
-        while (this.retryCount < this.maxRetries) {
-            this.retryCount += 1;
-            const result: HandshakeResult = {
-                capabilities: [
-                    "semantic.search",
-                    "editor.getContext",
-                    "editor.applyCommand",
-                    "notes.read",
-                    "notes.write",
-                    "metadata.update",
-                ],
-                availability: "normal",
-            };
-            if (PROTOCOL_VERSION !== this.expectedProtocolVersion) {
-                const error = new DomainError("CONFLICT", "Protocol version mismatch");
-                this.transition("degraded", "protocol_mismatch", error.correlationId);
-                throw error;
+        for (let attempt = 1; attempt <= this.maxRetries; attempt += 1) {
+            this.retryCount = attempt;
+
+            try {
+                const result = await this.performHandshake(apiKey);
+                const receivedProtocolVersion = result.protocolVersion ?? PROTOCOL_VERSION;
+
+                if (receivedProtocolVersion !== this.expectedProtocolVersion) {
+                    const error = new DomainError(
+                        "CONFLICT",
+                        `Protocol version mismatch: expected ${this.expectedProtocolVersion}, got ${receivedProtocolVersion}`,
+                    );
+                    this.transition("degraded", "protocol_mismatch", error.correlationId);
+                    throw error;
+                }
+
+                this.transition("normal", null, null);
+                logInfo(`plugin connected on attempt ${attempt}/${this.maxRetries}`);
+                return result;
+            } catch (error) {
+                if (error instanceof DomainError && error.code === "CONFLICT") {
+                    throw error;
+                }
+
+                if (attempt < this.maxRetries) {
+                    logInfo(`plugin handshake retry ${attempt}/${this.maxRetries}`);
+                    continue;
+                }
+
+                const correlationId = error instanceof DomainError ? error.correlationId : `corr-${Date.now()}`;
+                this.transition("degraded", "retry_exhausted", correlationId);
+                throw new DomainError("UNAVAILABLE", "Plugin connection retries exceeded", correlationId);
             }
-            this.transition("normal", null, null);
-            logInfo(`plugin connected on retry ${this.retryCount}`);
-            return result;
         }
 
         const error = new DomainError("UNAVAILABLE", "Plugin connection retries exceeded");
@@ -114,6 +128,21 @@ export class PluginClient {
             id: request.id,
             protocolVersion: PROTOCOL_VERSION,
             result: {} as TResult,
+        };
+    }
+
+    private async performHandshake(_apiKey: string): Promise<HandshakeResultWithVersion> {
+        return {
+            capabilities: [
+                "semantic.search",
+                "editor.getContext",
+                "editor.applyCommand",
+                "notes.read",
+                "notes.write",
+                "metadata.update",
+            ],
+            availability: "normal",
+            protocolVersion: PROTOCOL_VERSION,
         };
     }
 

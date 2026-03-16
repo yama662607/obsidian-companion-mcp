@@ -30,7 +30,7 @@ test("semantic search returns deterministic structured shape", () => {
     assert.match(source, /search_notes_semantic/);
     assert.match(source, /matches/);
     assert.match(source, /indexStatus/);
-    assert.match(source, /Index pending|No semantic matches/);
+    assert.match(source, /Index not ready|No semantic matches found|Index is empty/);
 });
 
 test("note and metadata fallback behavior exists", () => {
@@ -47,6 +47,8 @@ test("fallback storage applies frontmatter for metadata round-trip", () => {
     assert.match(source, /renderFrontmatter/);
     assert.match(source, /applyFrontmatter/);
     assert.match(source, /stripFrontmatter/);
+    assert.match(source, /detectEol/);
+    assert.match(source, /\^\\s\*---\\r\?\\n/);
 });
 
 test("delete_note keeps single-responsibility input contract", () => {

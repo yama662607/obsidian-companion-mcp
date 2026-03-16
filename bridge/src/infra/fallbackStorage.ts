@@ -5,9 +5,26 @@ type NoteRecord = {
 
 const notes = new Map<string, NoteRecord>();
 
+function detectEol(content: string): "\n" | "\r\n" {
+    return content.includes("\r\n") ? "\r\n" : "\n";
+}
+
+function quoteYamlString(value: string): string {
+    return `'${value.replaceAll("'", "''")}'`;
+}
+
 function formatScalar(value: unknown): string {
     if (typeof value === "string") {
-        return JSON.stringify(value);
+        const safePlain =
+            value.length > 0 &&
+            !value.includes("\n") &&
+            !value.includes("\r") &&
+            !value.includes(":") &&
+            !value.includes("#") &&
+            !value.startsWith(" ") &&
+            !value.endsWith(" ");
+
+        return safePlain ? value : quoteYamlString(value);
     }
 
     if (typeof value === "number" || typeof value === "boolean") {
@@ -21,32 +38,30 @@ function formatScalar(value: unknown): string {
     return JSON.stringify(value);
 }
 
-function renderFrontmatter(metadata: Record<string, unknown>): string {
+function renderFrontmatter(metadata: Record<string, unknown>, eol: "\n" | "\r\n"): string {
     const entries = Object.entries(metadata);
     if (entries.length === 0) {
         return "";
     }
 
     const lines = entries.map(([key, value]) => `${key}: ${formatScalar(value)}`);
-    return `---\n${lines.join("\n")}\n---\n`;
+    return `---${eol}${lines.join(eol)}${eol}---${eol}`;
 }
 
 function stripFrontmatter(content: string): string {
-    if (!content.startsWith("---\n")) {
+    const frontmatterPattern = /^\s*---\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n)?/;
+    const matched = content.match(frontmatterPattern);
+    if (!matched) {
         return content;
     }
 
-    const end = content.indexOf("\n---\n", 4);
-    if (end === -1) {
-        return content;
-    }
-
-    return content.slice(end + 5);
+    return content.slice(matched[0].length);
 }
 
 function applyFrontmatter(content: string, metadata: Record<string, unknown>): string {
+    const eol = detectEol(content);
     const body = stripFrontmatter(content);
-    const frontmatter = renderFrontmatter(metadata);
+    const frontmatter = renderFrontmatter(metadata, eol);
     return frontmatter ? `${frontmatter}${body}` : body;
 }
 
