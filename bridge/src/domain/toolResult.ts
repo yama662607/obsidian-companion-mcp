@@ -15,6 +15,7 @@ export interface ToolFailure {
     content: ToolTextContent[];
     structuredContent: {
         code: DomainErrorCode;
+        message: string;
         correlationId: string;
     };
 }
@@ -37,6 +38,7 @@ export function errorResult(error: DomainError): ToolFailure & McpCompatibleResu
         content: [{ type: "text", text: error.message }],
         structuredContent: {
             code: error.code,
+            message: error.message,
             correlationId: error.correlationId,
         },
     };

@@ -29,7 +29,11 @@ export function registerSemanticSearchTool(server: McpServer, semanticService: S
                             : "No semantic matches found")
                         : `Index not ready (${result.indexStatus.pendingCount} pending)`;
 
-                return okResult(summary, result);
+                return okResult(summary, {
+                    ...result,
+                    degraded: false,
+                    degradedReason: null,
+                });
             } catch (error) {
                 const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "semantic search failed");
                 return errorResult(domainError);

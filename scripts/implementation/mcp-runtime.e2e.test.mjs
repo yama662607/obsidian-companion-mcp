@@ -111,6 +111,8 @@ test("mcp e2e: note, metadata, and semantic flow behaves consistently", async (t
     assert.ok(Array.isArray(searched.structuredContent.matches));
     assert.ok(typeof searched.structuredContent.indexStatus.pendingCount === "number");
     assert.ok(typeof searched.structuredContent.indexStatus.isEmpty === "boolean");
+    assert.equal(searched.structuredContent.degraded, false);
+    assert.equal(searched.structuredContent.degradedReason, null);
 
     const deleted = await session.client.callTool({
         name: "delete_note",
@@ -182,4 +184,5 @@ test("mcp e2e: delete_note returns NOT_FOUND for missing note", async (t) => {
 
     assert.equal(result.isError, true);
     assert.equal(result.structuredContent.code, "NOT_FOUND");
+    assert.ok(typeof result.structuredContent.message === "string");
 });
