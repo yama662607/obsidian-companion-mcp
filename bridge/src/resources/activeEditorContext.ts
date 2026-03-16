@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { EditorService } from "../domain/editorService";
 
-export function registerActiveEditorContextResource(server: McpServer): void {
+export function registerActiveEditorContextResource(server: McpServer, editorService: EditorService): void {
     server.registerResource(
         "active_editor_context",
         "context://active-editor",
@@ -9,23 +10,27 @@ export function registerActiveEditorContextResource(server: McpServer): void {
             description: "Read-only snapshot of active editor state",
             mimeType: "application/json",
         },
-        async (uri) => ({
-            contents: [
-                {
-                    uri: uri.toString(),
-                    mimeType: "application/json",
-                    text: JSON.stringify(
-                        {
-                            activeFile: null,
-                            cursor: null,
-                            selection: "",
-                            content: "",
-                        },
-                        null,
-                        2,
-                    ),
-                },
-            ],
-        }),
+        async (uri) => {
+            const result = await editorService.getContext();
+
+            return {
+                contents: [
+                    {
+                        uri: uri.toString(),
+                        mimeType: "application/json",
+                        text: JSON.stringify(
+                            {
+                                ...result.context,
+                                degraded: result.degraded,
+                                degradedReason: result.degradedReason,
+                                noActiveEditor: result.noActiveEditor,
+                            },
+                            null,
+                            2,
+                        ),
+                    },
+                ],
+            };
+        },
     );
 }

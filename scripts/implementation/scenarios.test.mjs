@@ -17,6 +17,13 @@ test("editor context scenario is implemented in plugin host", () => {
     assert.match(source, /Invalid replace range/);
 });
 
+test("editor tools expose degraded and no-active-editor signals", () => {
+    const source = read("bridge/src/tools/editorCommands.ts");
+    assert.match(source, /degradedReason/);
+    assert.match(source, /noActiveEditor/);
+    assert.match(source, /No active editor/);
+});
+
 test("semantic search returns deterministic structured shape", () => {
     const source = read("bridge/src/tools/semanticSearch.ts");
     assert.match(source, /okResult\(/);

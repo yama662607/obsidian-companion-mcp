@@ -21,7 +21,17 @@ export function registerEditorTools(server: McpServer, editorService: EditorServ
         },
         async () => {
             try {
-                return okResult("Retrieved active editor context", editorService.getContext());
+                const result = await editorService.getContext();
+                const summary = result.noActiveEditor
+                    ? `No active editor (${result.degraded ? "degraded" : "normal"})`
+                    : `Retrieved active editor context (${result.degraded ? "degraded" : "normal"})`;
+
+                return okResult(summary, {
+                    ...result.context,
+                    degraded: result.degraded,
+                    degradedReason: result.degradedReason,
+                    noActiveEditor: result.noActiveEditor,
+                });
             } catch (error) {
                 const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "context retrieval failed");
                 return errorResult(domainError);
@@ -40,8 +50,13 @@ export function registerEditorTools(server: McpServer, editorService: EditorServ
         },
         async (params) => {
             try {
-                const context = editorService.insertText(params.text, params.position);
-                return okResult("Text inserted", context);
+                const result = await editorService.insertText(params.text, params.position);
+                return okResult(`Text inserted (${result.degraded ? "degraded" : "normal"})`, {
+                    ...result.context,
+                    degraded: result.degraded,
+                    degradedReason: result.degradedReason,
+                    noActiveEditor: result.noActiveEditor,
+                });
             } catch (error) {
                 const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "insert failed");
                 return errorResult(domainError);
@@ -63,8 +78,13 @@ export function registerEditorTools(server: McpServer, editorService: EditorServ
         },
         async (params) => {
             try {
-                const context = editorService.replaceRange(params.text, params.range);
-                return okResult("Range replaced", context);
+                const result = await editorService.replaceRange(params.text, params.range);
+                return okResult(`Range replaced (${result.degraded ? "degraded" : "normal"})`, {
+                    ...result.context,
+                    degraded: result.degraded,
+                    degradedReason: result.degradedReason,
+                    noActiveEditor: result.noActiveEditor,
+                });
             } catch (error) {
                 const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "replace failed");
                 return errorResult(domainError);

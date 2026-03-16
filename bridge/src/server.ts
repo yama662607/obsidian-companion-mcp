@@ -30,7 +30,7 @@ export function createServer(): ServerRuntime {
     });
 
     const pluginClient = new PluginClient();
-    const editorService = new EditorService();
+    const editorService = new EditorService(pluginClient);
     const semanticService = new SemanticService();
     const noteService = new NoteService(pluginClient);
 
@@ -43,7 +43,7 @@ export function createServer(): ServerRuntime {
     registerCapabilityMatrixResource(server);
     registerSchemaSummaryResource(server);
     registerFallbackBehaviorResource(server);
-    registerActiveEditorContextResource(server);
+    registerActiveEditorContextResource(server, editorService);
     registerRuntimeStatusResource(server, pluginClient);
 
     registerContextRewritePrompt(server);
