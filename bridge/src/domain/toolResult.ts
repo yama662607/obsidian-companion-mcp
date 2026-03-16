@@ -12,6 +12,9 @@ export interface ToolSuccess<TData> {
 
 export interface ToolFailure {
     isError: true;
+    code: DomainErrorCode;
+    message: string;
+    correlationId: string;
     content: ToolTextContent[];
     structuredContent: {
         code: DomainErrorCode;
@@ -33,9 +36,19 @@ export function okResult<TData>(
 }
 
 export function errorResult(error: DomainError): ToolFailure & McpCompatibleResult {
+    const payload = {
+        isError: true,
+        code: error.code,
+        message: error.message,
+        correlationId: error.correlationId,
+    };
+
     return {
         isError: true,
-        content: [{ type: "text", text: error.message }],
+        code: error.code,
+        message: error.message,
+        correlationId: error.correlationId,
+        content: [{ type: "text", text: JSON.stringify(payload) }],
         structuredContent: {
             code: error.code,
             message: error.message,

@@ -113,6 +113,7 @@ test("mcp e2e: note, metadata, and semantic flow behaves consistently", async (t
     assert.ok(typeof searched.structuredContent.indexStatus.isEmpty === "boolean");
     assert.equal(searched.structuredContent.degraded, false);
     assert.equal(searched.structuredContent.degradedReason, null);
+    assert.ok(searched.structuredContent.matches.some((match) => match.path === pathArg));
 
     const deleted = await session.client.callTool({
         name: "delete_note",
@@ -185,6 +186,9 @@ test("mcp e2e: delete_note returns NOT_FOUND for missing note", async (t) => {
     assert.equal(result.isError, true);
     assert.equal(result.structuredContent.code, "NOT_FOUND");
     assert.ok(typeof result.structuredContent.message === "string");
+    const errorPayload = JSON.parse(result.content[0].text);
+    assert.equal(errorPayload.isError, true);
+    assert.equal(errorPayload.code, "NOT_FOUND");
 });
 
 test("mcp e2e: get_note returns structured NOT_FOUND error", async (t) => {
@@ -201,6 +205,9 @@ test("mcp e2e: get_note returns structured NOT_FOUND error", async (t) => {
     assert.equal(result.isError, true);
     assert.equal(result.structuredContent.code, "NOT_FOUND");
     assert.ok(typeof result.structuredContent.message === "string");
+    const errorPayload = JSON.parse(result.content[0].text);
+    assert.equal(errorPayload.code, "NOT_FOUND");
+    assert.equal(errorPayload.isError, true);
 });
 
 test("mcp e2e: insert_at_cursor returns structured validation error", async (t) => {
@@ -220,4 +227,37 @@ test("mcp e2e: insert_at_cursor returns structured validation error", async (t) 
     assert.equal(result.isError, true);
     assert.equal(result.structuredContent.code, "VALIDATION");
     assert.ok(typeof result.structuredContent.message === "string");
+    const errorPayload = JSON.parse(result.content[0].text);
+    assert.equal(errorPayload.code, "VALIDATION");
+    assert.equal(errorPayload.isError, true);
+});
+
+test("mcp e2e: active context fields are semantically plausible", async (t) => {
+    const session = await createMcpClient();
+    t.after(async () => {
+        await session.close();
+    });
+
+    const result = await session.client.callTool({
+        name: "get_active_context",
+        arguments: {},
+    });
+
+    assert.ok(!result.isError);
+    assert.ok(typeof result.structuredContent.noActiveEditor === "boolean");
+    assert.ok(typeof result.structuredContent.degraded === "boolean");
+
+    if (result.structuredContent.noActiveEditor === false) {
+        const content = typeof result.structuredContent.content === "string"
+            ? result.structuredContent.content
+            : "";
+        const cursor = result.structuredContent.cursor;
+
+        if (cursor) {
+            const lineCount = content.length === 0 ? 1 : content.split("\n").length;
+            assert.ok(cursor.line >= 0);
+            assert.ok(cursor.ch >= 0);
+            assert.ok(cursor.line < lineCount);
+        }
+    }
 });
