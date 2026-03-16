@@ -186,3 +186,38 @@ test("mcp e2e: delete_note returns NOT_FOUND for missing note", async (t) => {
     assert.equal(result.structuredContent.code, "NOT_FOUND");
     assert.ok(typeof result.structuredContent.message === "string");
 });
+
+test("mcp e2e: get_note returns structured NOT_FOUND error", async (t) => {
+    const session = await createMcpClient();
+    t.after(async () => {
+        await session.close();
+    });
+
+    const result = await session.client.callTool({
+        name: "get_note",
+        arguments: { path: "e2e/missing-note.md" },
+    });
+
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent.code, "NOT_FOUND");
+    assert.ok(typeof result.structuredContent.message === "string");
+});
+
+test("mcp e2e: insert_at_cursor returns structured validation error", async (t) => {
+    const session = await createMcpClient();
+    t.after(async () => {
+        await session.close();
+    });
+
+    const result = await session.client.callTool({
+        name: "insert_at_cursor",
+        arguments: {
+            text: "x",
+            position: { line: 9999, ch: 9999 },
+        },
+    });
+
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent.code, "VALIDATION");
+    assert.ok(typeof result.structuredContent.message === "string");
+});

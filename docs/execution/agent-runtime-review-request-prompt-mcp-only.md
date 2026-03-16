@@ -29,6 +29,11 @@ Tools / Resources / Prompts のみを利用可能なエージェント向けの
 
 レビュー実行フロー:
 
+Preflight: バージョン固定
+1. MCPサーバーを最新ビルドで再起動する
+2. 既存セッション/キャッシュを破棄して新規接続する
+3. 取得した runtime://status を証跡として保存する
+
 Phase 0: セッション初期化
 1. listTools / listResources / listPrompts を実行
 2. それぞれの結果を「契約ベースライン」として保存
