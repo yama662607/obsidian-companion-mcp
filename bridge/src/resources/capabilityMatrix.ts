@@ -1,9 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { RESOURCE_URIS, RESOURCE_URI_LIST } from "../constants/resourceUris";
+import { TOOL_NAME_LIST } from "../constants/toolNames";
+import { PROMPT_NAME_LIST } from "../constants/promptNames";
 
 export function registerCapabilityMatrixResource(server: McpServer): void {
     server.registerResource(
         "capability_matrix",
-        "capability://matrix",
+        RESOURCE_URIS.CAPABILITY_MATRIX,
         {
             title: "Capability Matrix",
             description: "Tool/Resource/Prompt classification matrix",
@@ -16,29 +19,9 @@ export function registerCapabilityMatrixResource(server: McpServer): void {
                     mimeType: "application/json",
                     text: JSON.stringify(
                         {
-                            tools: [
-                                "search_notes_semantic",
-                                "insert_at_cursor",
-                                "replace_range",
-                                "create_note",
-                                "get_note",
-                                "update_note_content",
-                                "delete_note",
-                                "update_note_metadata",
-                            ],
-                            resources: [
-                                "capability://matrix",
-                                "schema://tool-inputs",
-                                "fallback://behavior",
-                                "context://active-editor",
-                                "runtime://status",
-                                "review://checklist",
-                            ],
-                            prompts: [
-                                "workflow_context_rewrite",
-                                "workflow_search_then_insert",
-                                "workflow_agent_runtime_review",
-                            ],
+                            tools: TOOL_NAME_LIST,
+                            resources: RESOURCE_URI_LIST,
+                            prompts: PROMPT_NAME_LIST,
                         },
                         null,
                         2,

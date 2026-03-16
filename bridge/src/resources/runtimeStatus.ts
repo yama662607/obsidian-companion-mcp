@@ -1,10 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { PluginClient } from "../infra/pluginClient";
+import { RESOURCE_URIS } from "../constants/resourceUris";
 
 export function registerRuntimeStatusResource(server: McpServer, pluginClient: PluginClient): void {
     server.registerResource(
         "runtime_status",
-        "runtime://status",
+        RESOURCE_URIS.RUNTIME_STATUS,
         {
             title: "Runtime Status",
             description: "Bridge runtime availability, retries, and degraded reason",

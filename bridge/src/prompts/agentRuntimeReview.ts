@@ -1,9 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { PROMPT_NAMES } from "../constants/promptNames";
 
 export function registerAgentRuntimeReviewPrompt(server: McpServer): void {
     server.registerPrompt(
-        "workflow_agent_runtime_review",
+        PROMPT_NAMES.AGENT_RUNTIME_REVIEW,
         {
             title: "Agent Runtime Review",
             description: "Generate a focused runtime and MCP contract review request for an agent",

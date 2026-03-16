@@ -1,10 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { EditorService } from "../domain/editorService";
+import { RESOURCE_URIS } from "../constants/resourceUris";
 
 export function registerActiveEditorContextResource(server: McpServer, editorService: EditorService): void {
     server.registerResource(
         "active_editor_context",
-        "context://active-editor",
+        RESOURCE_URIS.ACTIVE_EDITOR_CONTEXT,
         {
             title: "Active Editor Context",
             description: "Read-only snapshot of active editor state",

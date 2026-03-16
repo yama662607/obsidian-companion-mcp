@@ -1,9 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { RESOURCE_URIS } from "../constants/resourceUris";
 
 export function registerReviewChecklistResource(server: McpServer): void {
     server.registerResource(
         "review_checklist",
-        "review://checklist",
+        RESOURCE_URIS.REVIEW_CHECKLIST,
         {
             title: "Agent Review Checklist",
             description: "Read-only checklist for runtime and MCP contract review",

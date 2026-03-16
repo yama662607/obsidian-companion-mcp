@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { DomainError } from "../domain/errors";
 import { okResult, errorResult } from "../domain/toolResult";
 import type { NoteService } from "../domain/noteService";
+import { TOOL_NAMES } from "../constants/toolNames";
 import {
     createNoteInputSchema,
     getNoteInputSchema,
@@ -12,13 +13,10 @@ import {
 
 export function registerNoteTool(server: McpServer, noteService: NoteService): void {
     server.registerTool(
-        "create_note",
+        TOOL_NAMES.CREATE_NOTE,
         {
             description: "Create a markdown note at the given vault-relative path.",
             inputSchema: createNoteInputSchema,
-            annotations: {
-                idempotentHint: true,
-            },
         },
         async (params) => {
             try {
@@ -32,7 +30,7 @@ export function registerNoteTool(server: McpServer, noteService: NoteService): v
     );
 
     server.registerTool(
-        "get_note",
+        TOOL_NAMES.GET_NOTE,
         {
             description: "Read a markdown note content and normalized metadata.",
             inputSchema: getNoteInputSchema,
@@ -52,13 +50,10 @@ export function registerNoteTool(server: McpServer, noteService: NoteService): v
     );
 
     server.registerTool(
-        "update_note_content",
+        TOOL_NAMES.UPDATE_NOTE_CONTENT,
         {
             description: "Replace full markdown content of an existing note.",
             inputSchema: updateNoteContentInputSchema,
-            annotations: {
-                idempotentHint: true,
-            },
         },
         async (params) => {
             try {
@@ -72,13 +67,12 @@ export function registerNoteTool(server: McpServer, noteService: NoteService): v
     );
 
     server.registerTool(
-        "delete_note",
+        TOOL_NAMES.DELETE_NOTE,
         {
             description: "Delete a note by path. This operation is destructive.",
             inputSchema: deleteNoteInputSchema,
             annotations: {
                 destructiveHint: true,
-                idempotentHint: true,
             },
         },
         async (params) => {
@@ -93,7 +87,7 @@ export function registerNoteTool(server: McpServer, noteService: NoteService): v
     );
 
     server.registerTool(
-        "update_note_metadata",
+        TOOL_NAMES.UPDATE_NOTE_METADATA,
         {
             description: "Patch note metadata/frontmatter with schema-validated key-values.",
             inputSchema: updateNoteMetadataInputSchema,

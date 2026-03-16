@@ -1,0 +1,17 @@
+export const RESOURCE_URIS = {
+    CAPABILITY_MATRIX: "capability://matrix",
+    SCHEMA_SUMMARY: "schema://tool-inputs",
+    FALLBACK_BEHAVIOR: "fallback://behavior",
+    ACTIVE_EDITOR_CONTEXT: "context://active-editor",
+    RUNTIME_STATUS: "runtime://status",
+    REVIEW_CHECKLIST: "review://checklist",
+} as const;
+
+export const RESOURCE_URI_LIST = [
+    RESOURCE_URIS.CAPABILITY_MATRIX,
+    RESOURCE_URIS.SCHEMA_SUMMARY,
+    RESOURCE_URIS.FALLBACK_BEHAVIOR,
+    RESOURCE_URIS.ACTIVE_EDITOR_CONTEXT,
+    RESOURCE_URIS.RUNTIME_STATUS,
+    RESOURCE_URIS.REVIEW_CHECKLIST,
+];

@@ -1,9 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { RESOURCE_URIS } from "../constants/resourceUris";
 
 export function registerSchemaSummaryResource(server: McpServer): void {
     server.registerResource(
         "schema_summary",
-        "schema://tool-inputs",
+        RESOURCE_URIS.SCHEMA_SUMMARY,
         {
             title: "Tool Input Schemas",
             description: "Summary of strict input schema policy for bridge tools",

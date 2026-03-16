@@ -1,9 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { RESOURCE_URIS } from "../constants/resourceUris";
 
 export function registerFallbackBehaviorResource(server: McpServer): void {
     server.registerResource(
         "fallback_behavior",
-        "fallback://behavior",
+        RESOURCE_URIS.FALLBACK_BEHAVIOR,
         {
             title: "Fallback Behavior",
             description: "Describes degraded-mode behavior when plugin is unavailable",

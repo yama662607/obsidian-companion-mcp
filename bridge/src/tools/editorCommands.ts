@@ -3,15 +3,12 @@ import { z } from "zod";
 import { okResult, errorResult } from "../domain/toolResult";
 import { DomainError } from "../domain/errors";
 import type { EditorService } from "../domain/editorService";
-
-const positionSchema = z.object({
-    line: z.number().int().min(0),
-    ch: z.number().int().min(0),
-});
+import { positionSchema } from "../schemas/common";
+import { TOOL_NAMES } from "../constants/toolNames";
 
 export function registerEditorTools(server: McpServer, editorService: EditorService): void {
     server.registerTool(
-        "get_active_context",
+        TOOL_NAMES.GET_ACTIVE_CONTEXT,
         {
             description: "Get active file, cursor, selection, and unsaved editor content.",
             inputSchema: z.object({}),
@@ -40,7 +37,7 @@ export function registerEditorTools(server: McpServer, editorService: EditorServ
     );
 
     server.registerTool(
-        "insert_at_cursor",
+        TOOL_NAMES.INSERT_AT_CURSOR,
         {
             description: "Insert text at a validated editor position.",
             inputSchema: z.object({
@@ -65,7 +62,7 @@ export function registerEditorTools(server: McpServer, editorService: EditorServ
     );
 
     server.registerTool(
-        "replace_range",
+        TOOL_NAMES.REPLACE_RANGE,
         {
             description: "Replace text in a validated editor range.",
             inputSchema: z.object({

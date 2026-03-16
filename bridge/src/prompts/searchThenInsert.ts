@@ -1,9 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { TOOL_NAMES } from "../constants/toolNames";
+import { PROMPT_NAMES } from "../constants/promptNames";
 
 export function registerSearchThenInsertPrompt(server: McpServer): void {
     server.registerPrompt(
-        "workflow_search_then_insert",
+        PROMPT_NAMES.SEARCH_THEN_INSERT,
         {
             title: "Search Then Insert",
             description: "Find relevant context semantically and insert a concise note at cursor",
@@ -18,9 +20,9 @@ export function registerSearchThenInsertPrompt(server: McpServer): void {
                     content: {
                         type: "text",
                         text: [
-                            `Run search_notes_semantic with query: ${args.query}`,
+                            `Run ${TOOL_NAMES.SEARCH_NOTES_SEMANTIC} with query: ${args.query}`,
                             "Summarize the highest-ranked result in one sentence.",
-                            "Insert that summary via insert_at_cursor.",
+                            `Insert that summary via ${TOOL_NAMES.INSERT_AT_CURSOR}.`,
                         ].join("\n"),
                     },
                 },

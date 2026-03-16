@@ -3,10 +3,11 @@ import { z } from "zod";
 import { okResult, errorResult } from "../domain/toolResult";
 import { DomainError } from "../domain/errors";
 import type { SemanticService } from "../domain/semanticService";
+import { TOOL_NAMES } from "../constants/toolNames";
 
 export function registerSemanticSearchTool(server: McpServer, semanticService: SemanticService): void {
     server.registerTool(
-        "search_notes_semantic",
+        TOOL_NAMES.SEARCH_NOTES_SEMANTIC,
         {
             description: "Search notes semantically and return ranked matches with snippets.",
             inputSchema: z.object({
