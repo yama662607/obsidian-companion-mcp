@@ -1,50 +1,103 @@
 # エージェント向け Runtime レビュー依頼プロンプト
 
+このファイルは、obsidian-companion-mcp を搭載したエージェントに対し、
+Runtime と MCP 公開契約をレビュー依頼するためのテンプレートです。
+
+ソースコードを読めないエージェント向けには、
+`docs/execution/agent-runtime-review-request-prompt-mcp-only.md` を使用してください。
+
+## 推奨テンプレート（そのまま貼り付け可）
+
 以下をそのままエージェントに渡してください。
 
 ---
 
-あなたはMCPサーバーのレビュアーです。以下の要件でレビューしてください。
+あなたは TypeScript 製 MCP サーバーのシニアレビュアーです。
+対象リポジトリは obsidian-companion-mcp です。
 
-対象:
-- bridge のツール公開面
-- runtime の接続と degraded 動作
-- resource / prompt の整合
+レビュー目的:
+公開前の最終品質確認として、MCP公開契約（Tools/Resources/Prompts）と
+ランタイム挙動（handshake/degraded/fallback）に重大な欠陥がないことを確認する。
 
-レビュー観点:
-1. ツール設計
-- 1ツール1責務になっているか
-- 名前が意図ベースで分かりやすいか
-- inputSchema が厳密で、危険操作は最小入力になっているか
-- annotations が適切か
+レビュー対象:
+1. bridge の tool/resource/prompt 公開面
+2. runtime 接続と degraded 動作
+3. note/metadata/semantic の整合
+4. テスト・ドキュメントと実装の一致
 
-2. ランタイム設計
-- 起動時 handshake が明確に実行されるか
+必須チェック項目:
+1. Tool 設計
+- 1ツール1責務か
+- 名前が意図ベースか
+- inputSchema が厳密か（z.object、enum、limit境界）
+- annotations（readOnlyHint/destructiveHint/idempotentHint）が妥当か
+- 結果が text + structuredContent の二段構えか
+
+2. Runtime 設計
+- 起動時 handshake が実行されるか
 - degradedReason が機械可読で返るか
-- fallback 動作が silent failure になっていないか
+- fallback が silent failure を起こさないか
+- NOT_FOUND/VALIDATION/INTERNAL の契約が一貫しているか
 
-3. 検索・整合性
-- ノート更新と semantic index が接続されているか
-- metadata 更新が read round-trip で反映されるか
-- index 未準備と一致0件を区別できるか
+3. Note / Metadata / Semantic
+- update と delete が semantic index に正しく反映されるか
+- metadata round-trip が崩れないか
+- index 未準備とヒット0件を区別できるか
 
-4. Resource / Prompt
-- 読み取り専用情報が resource に適切に分離されているか
-- ワークフロー誘導が prompt に適切に置かれているか
-- ツール名変更が prompt と docs に反映されているか
+4. Resource / Prompt 整合
+- 読み取り専用情報が Resource に分離されているか
+- Prompt が現行ツール名に追従しているか
+- 定数一元管理（TOOL_NAMES/RESOURCE_URIS/PROMPT_NAMES）と実装が一致するか
 
-出力形式:
-- 重大度順に列挙（High / Medium / Low）
-- 各指摘に再現条件、影響、最小修正案を含める
-- ファイルと行番号を必ず示す
-- 最後に「即時対応すべき上位3件」を提示する
+5. テストと実装整合
+- scripts/implementation の期待値が現行実装と一致しているか
+- 追加が必要な回帰テストがあるか
 
-追加条件:
-- 推測ではなくコード根拠ベースで書く
-- 破壊的変更が必要なら互換移行案も書く
-- テスト不足があれば、追加すべきテスト名と観点を提案する
+実施方法:
+1. まず read-only で調査する
+2. 問題があれば証拠（ファイル・行）を示す
+3. 最小差分の修正案を示す
+4. 必要なら追加テスト案を示す
+
+出力フォーマット（必須）:
+1. Findings（重大度順: High, Medium, Low）
+- 各 finding に以下を含める
+	- タイトル
+	- 根拠（ファイルと行番号）
+	- 再現条件
+	- 影響
+	- 最小修正案
+	- 追加テスト案
+2. Open Questions / Assumptions
+3. 即時対応すべき上位3件
+4. 結論（現状で release 可否: GO / NO-GO）
+
+制約:
+- 推測ではなくコード根拠ベースで記述する
+- 破壊的変更を提案する場合は移行案も併記する
+- 指摘がない場合は「No findings」を明記し、残留リスクだけ述べる
 
 ---
 
-補足:
-- MCP上で prompt を使う場合は workflow_agent_runtime_review を呼び出し、scope と severityThreshold を指定してください。
+## MCP Prompt 呼び出し版
+
+MCP Prompt を直接使う場合は以下を使ってください。
+
+- name: workflow_agent_runtime_review
+- arguments:
+	- scope: bridge runtime + MCP contract
+	- severityThreshold: medium
+
+推奨 scope 例:
+- bridge tool/resource/prompt surface
+- degraded and fallback runtime behavior
+- note metadata semantic consistency
+
+## レビュー依頼時の添付推奨
+
+1. docs/execution/runtime-review-findings-2026-03-16.md
+2. scripts/implementation/mcp-runtime.e2e.test.mjs
+3. scripts/implementation/scenarios.test.mjs
+4. bridge/src/server.ts
+5. bridge/src/domain/noteService.ts
+6. bridge/src/domain/editorService.ts
