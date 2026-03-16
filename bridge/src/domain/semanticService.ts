@@ -67,6 +67,11 @@ export class SemanticService {
         };
     }
 
+    /**
+     * STUB IMPLEMENTATION:
+     * Current search uses simple substring matching for deterministic local behavior.
+     * The embedding vector is stored for future semantic ranking integration.
+     */
     search(query: string, limit: number): Array<{ path: string; score: number; snippet: string }> {
         const q = query.toLowerCase();
         return Array.from(this.notes.values())

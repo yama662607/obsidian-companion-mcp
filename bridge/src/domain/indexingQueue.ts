@@ -17,10 +17,14 @@ export class IndexingQueue {
     }
 
     enqueue(job: IndexJob): void {
-        const existing = this.queue.find((item) => item.path === job.path);
-        if (existing && existing.updatedAt >= job.updatedAt) {
-            return;
+        const existingIndex = this.queue.findIndex((item) => item.path === job.path);
+        if (existingIndex !== -1) {
+            if (this.queue[existingIndex].updatedAt >= job.updatedAt) {
+                return;
+            }
+            this.queue.splice(existingIndex, 1);
         }
+
         this.queue.push(job);
     }
 

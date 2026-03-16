@@ -55,6 +55,14 @@ export class EditorService {
             throw new DomainError("VALIDATION", "Invalid insert position");
         }
 
+        const lineCount = this.context.content.length === 0 ? 1 : this.context.content.split("\n").length;
+        if (position.line >= lineCount) {
+            throw new DomainError(
+                "VALIDATION",
+                `Insert position line ${position.line} exceeds content line count ${lineCount}`,
+            );
+        }
+
         try {
             const context = await this.pluginClient.send<
                 { command: "insertText"; text: string; pos: { line: number; ch: number } },
@@ -123,15 +131,10 @@ export class EditorService {
                 noActiveEditor: context.activeFile === null,
             };
         } catch {
-            this.context = {
-                ...this.context,
-                content: `${text}`,
-                cursor: range.to,
-            };
             return {
                 context: this.context,
                 degraded: true,
-                degradedReason: "plugin_unavailable",
+                degradedReason: "plugin_unavailable_range_replace_unsupported",
                 noActiveEditor: this.context.activeFile === null,
             };
         }

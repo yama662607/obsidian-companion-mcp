@@ -57,16 +57,22 @@ export class NoteService {
         try {
             await this.pluginClient.send("notes.delete", { path });
             const deleted = fallback.deleteNote(path);
-            if (deleted) {
-                this.semanticService?.remove(path);
+            if (!deleted) {
+                throw new DomainError("NOT_FOUND", `Note not found: ${path}`);
             }
-            return { deleted, degraded: false, degradedReason: null };
-        } catch {
+            this.semanticService?.remove(path);
+            return { deleted: true, degraded: false, degradedReason: null };
+        } catch (error) {
+            if (error instanceof DomainError && error.code === "NOT_FOUND") {
+                throw error;
+            }
+
             const deleted = fallback.deleteNote(path);
-            if (deleted) {
-                this.semanticService?.remove(path);
+            if (!deleted) {
+                throw new DomainError("NOT_FOUND", `Note not found: ${path}`);
             }
-            return { deleted, degraded: true, degradedReason: "plugin_unavailable" };
+            this.semanticService?.remove(path);
+            return { deleted: true, degraded: true, degradedReason: "plugin_unavailable" };
         }
     }
 
@@ -76,10 +82,6 @@ export class NoteService {
         degraded: boolean;
         degradedReason: string | null;
     }> {
-        if (metadata.invalid === true) {
-            throw new DomainError("VALIDATION", "metadata contains disallowed values");
-        }
-
         try {
             await this.pluginClient.send("metadata.update", { path, metadata });
             const record = fallback.updateMetadata(path, metadata);
