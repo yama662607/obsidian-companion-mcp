@@ -23,18 +23,20 @@ export interface PluginRuntimeStatus {
     lastCorrelationId: string | null;
 }
 
-type HandshakeResultWithVersion = HandshakeResult & { protocolVersion?: string };
-
 export class PluginClient {
     private availability: Availability = "unavailable";
     private degradedReason: AvailabilityReason | null = "startup_not_attempted";
     private lastCorrelationId: string | null = null;
     private retryCount = 0;
+    private readonly pluginUrl: string;
 
     constructor(
         private readonly maxRetries = 3,
         private readonly expectedProtocolVersion = PROTOCOL_VERSION,
-    ) { }
+    ) {
+        const port = process.env.OBSIDIAN_PLUGIN_PORT || "3031";
+        this.pluginUrl = `http://127.0.0.1:${port}`;
+    }
 
     async connect(): Promise<HandshakeResult> {
         this.retryCount = 0;
@@ -65,18 +67,25 @@ export class PluginClient {
 
                 if (attempt < this.maxRetries) {
                     logInfo(`plugin handshake retry ${attempt}/${this.maxRetries}`);
+                    // Wait 500ms before retry
+                    await new Promise(resolve => setTimeout(resolve, 500));
                     continue;
                 }
 
                 const correlationId = error instanceof DomainError ? error.correlationId : `corr-${Date.now()}`;
                 this.transition("degraded", "retry_exhausted", correlationId);
-                throw new DomainError("UNAVAILABLE", "Plugin connection retries exceeded", correlationId);
+                logInfo("Plugin handshake failed, continuing in degraded mode.");
+                return {
+                    capabilities: [],
+                    availability: "degraded"
+                };
             }
         }
 
-        const error = new DomainError("UNAVAILABLE", "Plugin connection retries exceeded");
-        this.transition("degraded", "retry_exhausted", error.correlationId);
-        throw error;
+        return {
+            capabilities: [],
+            availability: "degraded"
+        };
     }
 
     getAvailability(): Availability {
@@ -107,36 +116,58 @@ export class PluginClient {
             protocolVersion: PROTOCOL_VERSION,
         };
 
-        const response = await this.mockResponse<TResult>(request);
-        if (isJsonRpcFailure(response)) {
-            throw new DomainError(response.error.code as never, response.error.message, response.error.data.correlationId);
+        try {
+            const response = await fetch(this.pluginUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(request),
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const json = (await response.json()) as JsonRpcResponse<TResult>;
+            if (isJsonRpcFailure(json)) {
+                throw new DomainError(
+                    json.error.code as never,
+                    json.error.message,
+                    json.error.data?.correlationId
+                );
+            }
+
+            return json.result;
+        } catch (error) {
+            const correlationId = error instanceof DomainError ? error.correlationId : `corr-${Date.now()}`;
+            this.transition("degraded", "plugin_unavailable", correlationId);
+            throw new DomainError("UNAVAILABLE", "Plugin communication failed", correlationId);
+        }
+    }
+
+    private async performHandshake(): Promise<HandshakeResult & { protocolVersion?: string }> {
+        const request: JsonRpcRequest<unknown> = {
+            jsonrpc: "2.0",
+            id: Date.now(),
+            method: "health.ping",
+            protocolVersion: PROTOCOL_VERSION,
+        };
+
+        const response = await fetch(this.pluginUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(request),
+        });
+
+        if (!response.ok) {
+            throw new Error(`Handshake failed! status: ${response.status}`);
         }
 
-        return response.result;
-    }
+        const json = (await response.json()) as JsonRpcResponse<HandshakeResult & { protocolVersion?: string }>;
+        if (isJsonRpcFailure(json)) {
+            throw new Error(json.error.message);
+        }
 
-    private mockResponse<TResult>(request: JsonRpcRequest<unknown>): Promise<JsonRpcResponse<TResult>> {
-        return Promise.resolve({
-            jsonrpc: "2.0",
-            id: request.id,
-            protocolVersion: PROTOCOL_VERSION,
-            result: {} as TResult,
-        });
-    }
-
-    private performHandshake(): Promise<HandshakeResultWithVersion> {
-        return Promise.resolve({
-            capabilities: [
-                "semantic.search",
-                "editor.getContext",
-                "editor.applyCommand",
-                "notes.read",
-                "notes.write",
-                "metadata.update",
-            ],
-            availability: "normal",
-            protocolVersion: PROTOCOL_VERSION,
-        });
+        return json.result;
     }
 
     private transition(

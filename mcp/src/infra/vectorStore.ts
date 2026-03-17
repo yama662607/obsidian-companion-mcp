@@ -14,9 +14,9 @@ export class VectorStore {
 
     constructor() {
         const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-        const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
+        const configDir = process.env.OBSIDIAN_CONFIG_DIR;
 
-        if (vaultPath) {
+        if (vaultPath && configDir) {
             // Standard Obsidian plugin data location within the vault
             this.indexPath = path.join(
                 vaultPath,

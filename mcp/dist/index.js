@@ -35,11 +35,14 @@ var PluginClient = class {
   constructor(maxRetries = 3, expectedProtocolVersion = PROTOCOL_VERSION) {
     this.maxRetries = maxRetries;
     this.expectedProtocolVersion = expectedProtocolVersion;
+    const port = process.env.OBSIDIAN_PLUGIN_PORT || "3031";
+    this.pluginUrl = `http://127.0.0.1:${port}`;
   }
   availability = "unavailable";
   degradedReason = "startup_not_attempted";
   lastCorrelationId = null;
   retryCount = 0;
+  pluginUrl;
   async connect() {
     this.retryCount = 0;
     for (let attempt = 1; attempt <= this.maxRetries; attempt += 1) {
@@ -48,32 +51,38 @@ var PluginClient = class {
         const result = await this.performHandshake();
         const receivedProtocolVersion = result.protocolVersion ?? PROTOCOL_VERSION;
         if (receivedProtocolVersion !== this.expectedProtocolVersion) {
-          const error2 = new DomainError(
+          const error = new DomainError(
             "CONFLICT",
             `Protocol version mismatch: expected ${this.expectedProtocolVersion}, got ${receivedProtocolVersion}`
           );
-          this.transition("degraded", "protocol_mismatch", error2.correlationId);
-          throw error2;
+          this.transition("degraded", "protocol_mismatch", error.correlationId);
+          throw error;
         }
         this.transition("normal", null, null);
         logInfo(`plugin connected on attempt ${attempt}/${this.maxRetries}`);
         return result;
-      } catch (error2) {
-        if (error2 instanceof DomainError && error2.code === "CONFLICT") {
-          throw error2;
+      } catch (error) {
+        if (error instanceof DomainError && error.code === "CONFLICT") {
+          throw error;
         }
         if (attempt < this.maxRetries) {
           logInfo(`plugin handshake retry ${attempt}/${this.maxRetries}`);
+          await new Promise((resolve2) => setTimeout(resolve2, 500));
           continue;
         }
-        const correlationId = error2 instanceof DomainError ? error2.correlationId : `corr-${Date.now()}`;
+        const correlationId = error instanceof DomainError ? error.correlationId : `corr-${Date.now()}`;
         this.transition("degraded", "retry_exhausted", correlationId);
-        throw new DomainError("UNAVAILABLE", "Plugin connection retries exceeded", correlationId);
+        logInfo("Plugin handshake failed, continuing in degraded mode.");
+        return {
+          capabilities: [],
+          availability: "degraded"
+        };
       }
     }
-    const error = new DomainError("UNAVAILABLE", "Plugin connection retries exceeded");
-    this.transition("degraded", "retry_exhausted", error.correlationId);
-    throw error;
+    return {
+      capabilities: [],
+      availability: "degraded"
+    };
   }
   getAvailability() {
     return this.availability;
@@ -99,33 +108,50 @@ var PluginClient = class {
       params,
       protocolVersion: PROTOCOL_VERSION
     };
-    const response = await this.mockResponse(request);
-    if (isJsonRpcFailure(response)) {
-      throw new DomainError(response.error.code, response.error.message, response.error.data.correlationId);
+    try {
+      const response = await fetch(this.pluginUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request)
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const json = await response.json();
+      if (isJsonRpcFailure(json)) {
+        throw new DomainError(
+          json.error.code,
+          json.error.message,
+          json.error.data?.correlationId
+        );
+      }
+      return json.result;
+    } catch (error) {
+      const correlationId = error instanceof DomainError ? error.correlationId : `corr-${Date.now()}`;
+      this.transition("degraded", "plugin_unavailable", correlationId);
+      throw new DomainError("UNAVAILABLE", "Plugin communication failed", correlationId);
     }
-    return response.result;
   }
-  mockResponse(request) {
-    return Promise.resolve({
+  async performHandshake() {
+    const request = {
       jsonrpc: "2.0",
-      id: request.id,
-      protocolVersion: PROTOCOL_VERSION,
-      result: {}
-    });
-  }
-  performHandshake() {
-    return Promise.resolve({
-      capabilities: [
-        "semantic.search",
-        "editor.getContext",
-        "editor.applyCommand",
-        "notes.read",
-        "notes.write",
-        "metadata.update"
-      ],
-      availability: "normal",
+      id: Date.now(),
+      method: "health.ping",
       protocolVersion: PROTOCOL_VERSION
+    };
+    const response = await fetch(this.pluginUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request)
     });
+    if (!response.ok) {
+      throw new Error(`Handshake failed! status: ${response.status}`);
+    }
+    const json = await response.json();
+    if (isJsonRpcFailure(json)) {
+      throw new Error(json.error.message);
+    }
+    return json.result;
   }
   transition(availability, degradedReason, correlationId) {
     this.availability = availability;
@@ -246,8 +272,8 @@ var LocalEmbeddingProvider = class {
   modelDir;
   constructor() {
     const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-    const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
-    if (vaultPath) {
+    const configDir = process.env.OBSIDIAN_CONFIG_DIR;
+    if (vaultPath && configDir) {
       this.modelDir = path.join(
         vaultPath,
         configDir,
@@ -753,8 +779,8 @@ var VectorStore = class {
   indexPath;
   constructor() {
     const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-    const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
-    if (vaultPath) {
+    const configDir = process.env.OBSIDIAN_CONFIG_DIR;
+    if (vaultPath && configDir) {
       this.indexPath = path3.join(
         vaultPath,
         configDir,
@@ -1480,6 +1506,14 @@ function registerAgentRuntimeReviewPrompt(server) {
 
 // src/server.ts
 function createServer() {
+  const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
+  const configDir = process.env.OBSIDIAN_CONFIG_DIR;
+  if (!vaultPath || !configDir) {
+    throw new DomainError(
+      "VALIDATION",
+      "Missing required environment variables: OBSIDIAN_VAULT_PATH and OBSIDIAN_CONFIG_DIR must be set."
+    );
+  }
   const server = new McpServer({
     name: "obsidian-companion-mcp",
     version: "0.1.0"

@@ -28,6 +28,16 @@ export interface ServerRuntime {
 }
 
 export function createServer(): ServerRuntime {
+    const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
+    const configDir = process.env.OBSIDIAN_CONFIG_DIR;
+
+    if (!vaultPath || !configDir) {
+        throw new DomainError(
+            "VALIDATION",
+            "Missing required environment variables: OBSIDIAN_VAULT_PATH and OBSIDIAN_CONFIG_DIR must be set."
+        );
+    }
+
     const server = new McpServer({
         name: "obsidian-companion-mcp",
         version: "0.1.0",

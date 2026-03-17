@@ -18,9 +18,9 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
 
     constructor() {
         const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-        const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
+        const configDir = process.env.OBSIDIAN_CONFIG_DIR;
 
-        if (vaultPath) {
+        if (vaultPath && configDir) {
             this.modelDir = path.join(
                 vaultPath,
                 configDir,
