@@ -130,6 +130,10 @@ export class SemanticService {
             .slice(0, limit);
     }
 
+    getProvider(): EmbeddingProvider {
+        return this.provider;
+    }
+
     // For testing/internal use
     getNotes(): Map<string, IndexedNote> {
         return this.notes;

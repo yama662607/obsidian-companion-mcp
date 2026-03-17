@@ -39,6 +39,7 @@ export type JsonRpcResponse<TResult = unknown> = JsonRpcSuccess<TResult> | JsonR
 export interface HandshakeResult {
     capabilities: string[];
     availability: "normal" | "degraded" | "unavailable";
+    configDir?: string;
 }
 
 export function isJsonRpcFailure(input: JsonRpcResponse<unknown>): input is JsonRpcFailure {

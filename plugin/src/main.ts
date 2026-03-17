@@ -39,6 +39,7 @@ class LocalJsonRpcHost {
             const result: HandshakeResult = {
                 capabilities: ["health.ping", "editor.getContext", "editor.applyCommand", "notes.read"],
                 availability: "normal",
+                configDir: this.plugin.app.vault.configDir,
             };
             return { jsonrpc: "2.0", id, protocolVersion: PROTOCOL_VERSION, result };
         }

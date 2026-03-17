@@ -29,6 +29,7 @@ export class PluginClient {
     private lastCorrelationId: string | null = null;
     private retryCount = 0;
     private readonly pluginUrl: string;
+    private configDir: string | null = null;
 
     constructor(
         private readonly maxRetries = 3,
@@ -36,6 +37,7 @@ export class PluginClient {
     ) {
         const port = process.env.OBSIDIAN_PLUGIN_PORT || "3031";
         this.pluginUrl = `http://127.0.0.1:${port}`;
+        this.configDir = process.env.OBSIDIAN_CONFIG_DIR || null;
     }
 
     async connect(): Promise<HandshakeResult> {
@@ -55,6 +57,11 @@ export class PluginClient {
                     );
                     this.transition("degraded", "protocol_mismatch", error.correlationId);
                     throw error;
+                }
+
+                if (result.configDir) {
+                    this.configDir = result.configDir;
+                    logInfo(`plugin reported config directory: ${this.configDir}`);
                 }
 
                 this.transition("normal", null, null);
@@ -90,6 +97,10 @@ export class PluginClient {
 
     getAvailability(): Availability {
         return this.availability;
+    }
+
+    getConfigDir(): string | null {
+        return this.configDir;
     }
 
     getRuntimeStatus(): PluginRuntimeStatus {

@@ -29,12 +29,12 @@ export interface ServerRuntime {
 
 export function createServer(): ServerRuntime {
     const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-    const configDir = process.env.OBSIDIAN_CONFIG_DIR;
+    const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
 
-    if (!vaultPath || !configDir) {
+    if (!vaultPath) {
         throw new DomainError(
             "VALIDATION",
-            "Missing required environment variables: OBSIDIAN_VAULT_PATH and OBSIDIAN_CONFIG_DIR must be set."
+            "Missing required environment variable: OBSIDIAN_VAULT_PATH must be set."
         );
     }
 
@@ -96,8 +96,24 @@ export async function runServer(): Promise<void> {
     }, 5 * 60 * 1000);
 
     try {
-        await pluginClient.connect();
+        const handshake = await pluginClient.connect();
         logInfo("startup handshake completed");
+
+        // Dynamic auto-configuration if plugin reported a custom config directory
+        if (handshake.configDir && process.env.OBSIDIAN_VAULT_PATH) {
+            const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
+            logInfo(`applying dynamic configuration: configDir=${handshake.configDir}`);
+            
+            vectorStore.updateIndexPath(vaultPath, handshake.configDir);
+            
+            if (semanticService.getProvider().kind === "local") {
+                (semanticService.getProvider() as any).updateModelPath(vaultPath, handshake.configDir);
+            }
+            
+            // Reload index from the new path
+            const updatedNotes = await vectorStore.load();
+            semanticService.setNotes(updatedNotes);
+        }
     } catch (error) {
         const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "startup handshake failed");
         logError(

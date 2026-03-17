@@ -10,26 +10,22 @@ type IndexedNote = {
 };
 
 export class VectorStore {
-    private readonly indexPath: string;
+    private indexPath: string;
 
     constructor() {
         const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-        const configDir = process.env.OBSIDIAN_CONFIG_DIR;
+        const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
 
-        if (vaultPath && configDir) {
-            // Standard Obsidian plugin data location within the vault
-            this.indexPath = path.join(
-                vaultPath,
-                configDir,
-                "plugins",
-                "companion-mcp",
-                "data",
-                "semantic-index.json"
-            );
-        } else {
-            // Fallback to local project directory for testing
-            this.indexPath = path.join(process.cwd(), "semantic-index.json");
-        }
+        this.indexPath = vaultPath
+            ? path.join(vaultPath, configDir, "plugins", "companion-mcp", "data", "semantic-index.json")
+            : path.join(process.cwd(), "semantic-index.json");
+    }
+
+    /**
+     * Updates the index path dynamically.
+     */
+    public updateIndexPath(vaultPath: string, configDir: string): void {
+        this.indexPath = path.join(vaultPath, configDir, "plugins", "companion-mcp", "data", "semantic-index.json");
     }
 
     async load(): Promise<Map<string, IndexedNote>> {

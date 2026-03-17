@@ -18,20 +18,24 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
 
     constructor() {
         const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-        const configDir = process.env.OBSIDIAN_CONFIG_DIR;
+        const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
 
-        if (vaultPath && configDir) {
-            this.modelDir = path.join(
-                vaultPath,
-                configDir,
-                "plugins",
-                "companion-mcp",
-                "models"
-            );
-        } else {
-            this.modelDir = path.join(os.homedir(), ".cache", "obsidian-companion-mcp", "models");
-        }
+        this.modelDir = vaultPath 
+            ? path.join(vaultPath, configDir, "plugins", "companion-mcp", "models")
+            : path.join(os.homedir(), ".cache", "obsidian-companion-mcp", "models");
 
+        this.applyModelPath();
+    }
+
+    /**
+     * Updates the model directory dynamically.
+     */
+    public updateModelPath(vaultPath: string, configDir: string): void {
+        this.modelDir = path.join(vaultPath, configDir, "plugins", "companion-mcp", "models");
+        this.applyModelPath();
+    }
+
+    private applyModelPath(): void {
         // Ensure the directory exists
         if (!fs.existsSync(this.modelDir)) {
             fs.mkdirSync(this.modelDir, { recursive: true });

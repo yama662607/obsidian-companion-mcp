@@ -37,12 +37,14 @@ var PluginClient = class {
     this.expectedProtocolVersion = expectedProtocolVersion;
     const port = process.env.OBSIDIAN_PLUGIN_PORT || "3031";
     this.pluginUrl = `http://127.0.0.1:${port}`;
+    this.configDir = process.env.OBSIDIAN_CONFIG_DIR || null;
   }
   availability = "unavailable";
   degradedReason = "startup_not_attempted";
   lastCorrelationId = null;
   retryCount = 0;
   pluginUrl;
+  configDir = null;
   async connect() {
     this.retryCount = 0;
     for (let attempt = 1; attempt <= this.maxRetries; attempt += 1) {
@@ -57,6 +59,10 @@ var PluginClient = class {
           );
           this.transition("degraded", "protocol_mismatch", error.correlationId);
           throw error;
+        }
+        if (result.configDir) {
+          this.configDir = result.configDir;
+          logInfo(`plugin reported config directory: ${this.configDir}`);
         }
         this.transition("normal", null, null);
         logInfo(`plugin connected on attempt ${attempt}/${this.maxRetries}`);
@@ -86,6 +92,9 @@ var PluginClient = class {
   }
   getAvailability() {
     return this.availability;
+  }
+  getConfigDir() {
+    return this.configDir;
   }
   getRuntimeStatus() {
     return {
@@ -272,18 +281,18 @@ var LocalEmbeddingProvider = class {
   modelDir;
   constructor() {
     const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-    const configDir = process.env.OBSIDIAN_CONFIG_DIR;
-    if (vaultPath && configDir) {
-      this.modelDir = path.join(
-        vaultPath,
-        configDir,
-        "plugins",
-        "companion-mcp",
-        "models"
-      );
-    } else {
-      this.modelDir = path.join(os.homedir(), ".cache", "obsidian-companion-mcp", "models");
-    }
+    const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
+    this.modelDir = vaultPath ? path.join(vaultPath, configDir, "plugins", "companion-mcp", "models") : path.join(os.homedir(), ".cache", "obsidian-companion-mcp", "models");
+    this.applyModelPath();
+  }
+  /**
+   * Updates the model directory dynamically.
+   */
+  updateModelPath(vaultPath, configDir) {
+    this.modelDir = path.join(vaultPath, configDir, "plugins", "companion-mcp", "models");
+    this.applyModelPath();
+  }
+  applyModelPath() {
     if (!fs.existsSync(this.modelDir)) {
       fs.mkdirSync(this.modelDir, { recursive: true });
     }
@@ -479,6 +488,9 @@ var SemanticService = class {
         score
       };
     }).sort((a, b) => b.score - a.score).slice(0, limit);
+  }
+  getProvider() {
+    return this.provider;
   }
   // For testing/internal use
   getNotes() {
@@ -779,19 +791,14 @@ var VectorStore = class {
   indexPath;
   constructor() {
     const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-    const configDir = process.env.OBSIDIAN_CONFIG_DIR;
-    if (vaultPath && configDir) {
-      this.indexPath = path3.join(
-        vaultPath,
-        configDir,
-        "plugins",
-        "companion-mcp",
-        "data",
-        "semantic-index.json"
-      );
-    } else {
-      this.indexPath = path3.join(process.cwd(), "semantic-index.json");
-    }
+    const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
+    this.indexPath = vaultPath ? path3.join(vaultPath, configDir, "plugins", "companion-mcp", "data", "semantic-index.json") : path3.join(process.cwd(), "semantic-index.json");
+  }
+  /**
+   * Updates the index path dynamically.
+   */
+  updateIndexPath(vaultPath, configDir) {
+    this.indexPath = path3.join(vaultPath, configDir, "plugins", "companion-mcp", "data", "semantic-index.json");
   }
   async load() {
     try {
@@ -1507,11 +1514,11 @@ function registerAgentRuntimeReviewPrompt(server) {
 // src/server.ts
 function createServer() {
   const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-  const configDir = process.env.OBSIDIAN_CONFIG_DIR;
-  if (!vaultPath || !configDir) {
+  const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
+  if (!vaultPath) {
     throw new DomainError(
       "VALIDATION",
-      "Missing required environment variables: OBSIDIAN_VAULT_PATH and OBSIDIAN_CONFIG_DIR must be set."
+      "Missing required environment variable: OBSIDIAN_VAULT_PATH must be set."
     );
   }
   const server = new McpServer({
@@ -1554,8 +1561,18 @@ async function runServer() {
     await vectorStore.save(semanticService.getNotes());
   }, 5 * 60 * 1e3);
   try {
-    await pluginClient.connect();
+    const handshake = await pluginClient.connect();
     logInfo("startup handshake completed");
+    if (handshake.configDir && process.env.OBSIDIAN_VAULT_PATH) {
+      const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
+      logInfo(`applying dynamic configuration: configDir=${handshake.configDir}`);
+      vectorStore.updateIndexPath(vaultPath, handshake.configDir);
+      if (semanticService.getProvider().kind === "local") {
+        semanticService.getProvider().updateModelPath(vaultPath, handshake.configDir);
+      }
+      const updatedNotes = await vectorStore.load();
+      semanticService.setNotes(updatedNotes);
+    }
   } catch (error) {
     const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "startup handshake failed");
     logError(
