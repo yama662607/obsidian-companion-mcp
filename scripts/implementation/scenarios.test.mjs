@@ -80,11 +80,19 @@ test("delete_note missing path returns NOT_FOUND semantics", () => {
 
 test("fallback storage applies frontmatter for metadata round-trip", () => {
     const source = read("mcp/src/infra/fallbackStorage.ts");
-    assert.match(source, /renderFrontmatter/);
+    const sharedSource = read("shared/frontmatter.ts");
+    assert.match(source, /applyFrontmatter, hasFrontmatter, parseFrontmatter/);
     assert.match(source, /applyFrontmatter/);
-    assert.match(source, /stripFrontmatter/);
-    assert.match(source, /detectEol/);
-    assert.match(source, /\^\\s\*---\\r\?\\n/);
+    assert.match(source, /hasFrontmatter\(content\)/);
+    assert.match(sharedSource, /value\.length === 0/);
+    assert.match(sharedSource, /items\.push\(parseScalar/);
+    assert.match(sharedSource, /frontmatterPattern = \/\^\\s\*---\\r\?\\n/);
+});
+
+test("plugin metadata updates use shared frontmatter rendering", () => {
+    const source = read("plugin/src/main.ts");
+    assert.match(source, /applyFrontmatter/);
+    assert.doesNotMatch(source, /JSON\.stringify\(v\)/);
 });
 
 test("fallback storage is anchored to OBSIDIAN_VAULT_PATH", () => {

@@ -554,32 +554,83 @@ var SemanticService = class {
 // src/infra/fallbackStorage.ts
 import * as fs2 from "fs";
 import * as path2 from "path";
-var VAULT_PATH_ENV = "OBSIDIAN_VAULT_PATH";
+
+// ../shared/frontmatter.ts
 function detectEol(content) {
   return content.includes("\r\n") ? "\r\n" : "\n";
 }
 function quoteYamlString(value) {
   return `'${value.replaceAll("'", "''")}'`;
 }
+function parseQuotedString(rawValue) {
+  if (rawValue.startsWith("'") && rawValue.endsWith("'")) {
+    return rawValue.slice(1, -1).replaceAll("''", "'");
+  }
+  if (rawValue.startsWith('"') && rawValue.endsWith('"')) {
+    try {
+      return JSON.parse(rawValue);
+    } catch {
+      return rawValue.slice(1, -1);
+    }
+  }
+  return rawValue;
+}
+function parseScalar(rawValue) {
+  const normalized = rawValue.trim();
+  if (normalized === "null") {
+    return null;
+  }
+  if (normalized === "true" || normalized === "false") {
+    return normalized === "true";
+  }
+  if (normalized.startsWith("'") && normalized.endsWith("'") || normalized.startsWith('"') && normalized.endsWith('"')) {
+    return parseQuotedString(normalized);
+  }
+  if (normalized.startsWith("[") && normalized.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(normalized);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+    }
+  }
+  if (normalized !== "" && !Number.isNaN(Number(normalized))) {
+    return Number(normalized);
+  }
+  return normalized;
+}
 function formatScalar(value) {
   if (typeof value === "string") {
-    const safePlain = value.length > 0 && !value.includes("\n") && !value.includes("\r") && !value.includes(":") && !value.includes("#") && !value.startsWith(" ") && !value.endsWith(" ");
+    const safePlain = value.length > 0 && !value.includes("\n") && !value.includes("\r") && !value.includes(":") && !value.includes("#") && !value.startsWith(" ") && !value.endsWith(" ") && value !== "null" && value !== "true" && value !== "false";
     return safePlain ? value : quoteYamlString(value);
   }
   if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
-  if (value === null || value === void 0) {
-    return "null";
+  return "null";
+}
+function renderArrayItem(value) {
+  if (Array.isArray(value)) {
+    return quoteYamlString(JSON.stringify(value));
   }
-  return JSON.stringify(value);
+  return formatScalar(value);
+}
+function renderEntry(key, value, eol) {
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return `${key}: []`;
+    }
+    return `${key}:${eol}${value.map((item) => `  - ${renderArrayItem(item)}`).join(eol)}`;
+  }
+  return `${key}: ${formatScalar(value)}`;
 }
 function renderFrontmatter(metadata, eol) {
   const entries = Object.entries(metadata);
   if (entries.length === 0) {
     return "";
   }
-  const lines = entries.map(([key, value]) => `${key}: ${formatScalar(value)}`);
+  const lines = entries.map(([key, value]) => renderEntry(key, value, eol));
   return `---${eol}${lines.join(eol)}${eol}---${eol}`;
 }
 function stripFrontmatter(content) {
@@ -597,31 +648,45 @@ function parseFrontmatter(content) {
     return {};
   }
   const metadata = {};
-  for (const line of matched[1].split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || !trimmed.includes(":")) {
+  const lines = matched[1].split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    if (!rawLine.trim() || rawLine.trimStart().startsWith("#")) {
       continue;
     }
-    const separator = trimmed.indexOf(":");
-    const key = trimmed.slice(0, separator).trim();
-    let rawValue = trimmed.slice(separator + 1).trim();
+    const separator = rawLine.indexOf(":");
+    if (separator <= 0) {
+      continue;
+    }
+    const key = rawLine.slice(0, separator).trim();
+    const rawValue = rawLine.slice(separator + 1).trim();
     if (!key) {
       continue;
     }
-    if (rawValue.startsWith("'") && rawValue.endsWith("'") || rawValue.startsWith('"') && rawValue.endsWith('"')) {
-      rawValue = rawValue.slice(1, -1);
+    if (rawValue === "") {
+      const items = [];
+      let cursor = i + 1;
+      while (cursor < lines.length) {
+        const itemLine = lines[cursor];
+        const itemMatch = itemLine.match(/^\s*-\s+(.*)$/);
+        if (!itemMatch) {
+          break;
+        }
+        items.push(parseScalar(itemMatch[1]));
+        cursor++;
+      }
+      if (items.length > 0) {
+        metadata[key] = items;
+        i = cursor - 1;
+        continue;
+      }
     }
-    if (rawValue === "null") {
-      metadata[key] = null;
-    } else if (rawValue === "true" || rawValue === "false") {
-      metadata[key] = rawValue === "true";
-    } else if (!Number.isNaN(Number(rawValue)) && rawValue !== "") {
-      metadata[key] = Number(rawValue);
-    } else {
-      metadata[key] = rawValue;
-    }
+    metadata[key] = parseScalar(rawValue);
   }
   return metadata;
+}
+function hasFrontmatter(content) {
+  return /^\s*---\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n)?/.test(content);
 }
 function applyFrontmatter(content, metadata) {
   const eol = detectEol(content);
@@ -629,6 +694,9 @@ function applyFrontmatter(content, metadata) {
   const frontmatter = renderFrontmatter(metadata, eol);
   return frontmatter ? `${frontmatter}${body}` : body;
 }
+
+// src/infra/fallbackStorage.ts
+var VAULT_PATH_ENV = "OBSIDIAN_VAULT_PATH";
 function getVaultRoot() {
   const configured = process.env[VAULT_PATH_ENV]?.trim();
   if (!configured) {
@@ -670,9 +738,9 @@ function readNote(path4) {
 function writeNote(path4, content) {
   const filePath = resolveVaultPath(path4);
   const existing = readNote(path4);
-  const metadata = existing?.metadata ?? {};
+  const metadata = hasFrontmatter(content) ? parseFrontmatter(content) : existing?.metadata ?? {};
   const next = {
-    content: applyFrontmatter(content, metadata),
+    content: hasFrontmatter(content) ? content : applyFrontmatter(content, metadata),
     metadata
   };
   ensureParentDir(filePath);

@@ -199,6 +199,91 @@ test("mcp e2e: note, metadata, and semantic flow behaves consistently", async (t
     assert.equal(deleted.structuredContent.deleted, true);
 });
 
+test("mcp e2e: update_note_content preserves YAML array frontmatter", async (t) => {
+    resetE2EVault();
+    const session = await createMcpClient();
+    t.after(async () => {
+        await session.close();
+    });
+
+    const pathArg = "e2e/frontmatter-content.md";
+    const content = `---
+tags:
+  - x
+  - y
+labels:
+  - l1
+  - l2
+---
+
+# Frontmatter Content
+`;
+
+    const updated = await session.client.callTool({
+        name: "update_note_content",
+        arguments: {
+            path: pathArg,
+            content,
+        },
+    });
+    assert.ok(!updated.isError);
+
+    const readBack = await session.client.callTool({
+        name: "get_note",
+        arguments: { path: pathArg },
+    });
+    assert.ok(!readBack.isError);
+    assert.deepEqual(readBack.structuredContent.metadata.tags, ["x", "y"]);
+    assert.deepEqual(readBack.structuredContent.metadata.labels, ["l1", "l2"]);
+
+    const saved = fs.readFileSync(path.join(e2eVaultRoot, pathArg), "utf8");
+    assert.match(saved, /tags:\s*\n  - x\n  - y/);
+    assert.match(saved, /labels:\s*\n  - l1\n  - l2/);
+});
+
+test("mcp e2e: get_note preserves array metadata types", async (t) => {
+    resetE2EVault();
+    const session = await createMcpClient();
+    t.after(async () => {
+        await session.close();
+    });
+
+    const pathArg = "e2e/frontmatter-metadata.md";
+
+    const created = await session.client.callTool({
+        name: "create_note",
+        arguments: {
+            path: pathArg,
+            content: "# Metadata Arrays",
+        },
+    });
+    assert.ok(!created.isError);
+
+    const updatedMetadata = await session.client.callTool({
+        name: "update_note_metadata",
+        arguments: {
+            path: pathArg,
+            metadata: {
+                tags: ["a", "b"],
+                nums: [1, 2],
+            },
+        },
+    });
+    assert.ok(!updatedMetadata.isError);
+
+    const readBack = await session.client.callTool({
+        name: "get_note",
+        arguments: { path: pathArg },
+    });
+    assert.ok(!readBack.isError);
+    assert.deepEqual(readBack.structuredContent.metadata.tags, ["a", "b"]);
+    assert.deepEqual(readBack.structuredContent.metadata.nums, [1, 2]);
+
+    const saved = fs.readFileSync(path.join(e2eVaultRoot, pathArg), "utf8");
+    assert.match(saved, /tags:\s*\n  - a\n  - b/);
+    assert.match(saved, /nums:\s*\n  - 1\n  - 2/);
+});
+
 test("mcp e2e: startup can discover vault path from plugin handshake", async (t) => {
     const discoveredVaultRoot = path.join(repoRoot, ".tmp", "mcp-e2e-auto-vault");
     fs.rmSync(discoveredVaultRoot, { recursive: true, force: true });

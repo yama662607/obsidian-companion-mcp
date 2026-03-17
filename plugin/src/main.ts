@@ -9,6 +9,7 @@ import {
     type HandshakeResult,
 } from "../../shared/protocol";
 import { validateEditorPosition, validateEditorRange } from "../../shared/editorPositions";
+import { applyFrontmatter } from "../../shared/frontmatter";
 
 interface CompanionSettings {
     port: number;
@@ -301,20 +302,7 @@ class LocalJsonRpcHost {
      * Update frontmatter in content. Preserves existing frontmatter structure.
      */
     private updateFrontmatter(content: string, metadata: Record<string, unknown>): string {
-        const frontmatterRegex = /^---\n([\s\S]*?)\n---\n\n?/;
-        const match = content.match(frontmatterRegex);
-
-        const metadataStr = Object.entries(metadata)
-            .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
-            .join("\n");
-
-        if (match) {
-            // Replace existing frontmatter
-            return content.replace(frontmatterRegex, `---\n${metadataStr}\n---\n\n`);
-        } else {
-            // Add new frontmatter
-            return `---\n${metadataStr}\n---\n\n${content}`;
-        }
+        return applyFrontmatter(content, metadata);
     }
 }
 
