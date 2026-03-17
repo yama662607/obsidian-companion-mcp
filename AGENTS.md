@@ -34,7 +34,7 @@ This project uses `just` for task automation. Follow these commands:
 - `just mcp-build` — Build mcp only
 - `just plugin-build` — Build plugin only
 - `just plugin-install-local /absolute/path/to/vault` — Build and install plugin into a specific vault
-- `OBSIDIAN_VAULT_PATH=/absolute/path/to/vault just plugin-install` — Build and install plugin into the configured vault
+- `just plugin-install` — Build and install plugin into the vault configured by root `.env` / `OBSIDIAN_VAULT_PATH`
 - `just upgrade` — Upgrade dependencies
 
 ## Development Notes

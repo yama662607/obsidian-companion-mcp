@@ -2,6 +2,7 @@
 # Configuration & Variables
 # =============================================================================
 
+# Loads project-local .env automatically when present.
 set dotenv-load := true
 set shell := ["bash", "-c"]
 
@@ -168,7 +169,7 @@ plugin-install-local vault_path:
 plugin-install:
     @if [ -z "${OBSIDIAN_VAULT_PATH:-}" ]; then \
         echo "Error: OBSIDIAN_VAULT_PATH is not set."; \
-        echo "Usage: OBSIDIAN_VAULT_PATH=/absolute/path/to/vault just plugin-install"; \
+        echo "Set it in .env or run: OBSIDIAN_VAULT_PATH=/absolute/path/to/vault just plugin-install"; \
         exit 1; \
     fi
     @bash scripts/release/install-plugin-to-vault.sh "${OBSIDIAN_VAULT_PATH}"

@@ -22,6 +22,16 @@ To use Obsidian Companion MCP, you need to set up both the Obsidian plugin and t
 
 The MCP server acts as a bridge between AI agents and Obsidian.
 
+### Local `.env` For Development
+
+For local development and `just` commands, create a root `.env` file and set:
+
+```bash
+OBSIDIAN_VAULT_PATH="/absolute/path/to/your/obsidian/vault"
+```
+
+This repository's `justfile` loads `.env` automatically, so commands such as `just plugin-install` can use the configured vault without extra shell prefixes.
+
 #### Recommendation: Global Installation (Fastest)
 
 For the best performance and fastest startup, we recommend installing the package globally:
