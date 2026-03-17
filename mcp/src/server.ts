@@ -4,6 +4,7 @@ import { PluginClient } from "./infra/pluginClient";
 import { EditorService } from "./domain/editorService";
 import { SemanticService } from "./domain/semanticService";
 import { NoteService } from "./domain/noteService";
+import { VectorStore } from "./infra/vectorStore";
 import { registerSemanticSearchTool } from "./tools/semanticSearch";
 import { registerEditorTools } from "./tools/editorCommands";
 import { registerNoteTool } from "./tools/noteManagement";
@@ -22,6 +23,8 @@ import { DomainError } from "./domain/errors";
 export interface ServerRuntime {
     server: McpServer;
     pluginClient: PluginClient;
+    semanticService: SemanticService;
+    vectorStore: VectorStore;
 }
 
 export function createServer(): ServerRuntime {
@@ -33,6 +36,7 @@ export function createServer(): ServerRuntime {
     const pluginClient = new PluginClient();
     const editorService = new EditorService(pluginClient);
     const semanticService = new SemanticService();
+    const vectorStore = new VectorStore();
     const noteService = new NoteService(pluginClient, semanticService);
 
     // Registration only: all behavior remains in tools/resources/prompts/domain layers.
@@ -51,11 +55,31 @@ export function createServer(): ServerRuntime {
     registerSearchThenInsertPrompt(server);
     registerAgentRuntimeReviewPrompt(server);
 
-    return { server, pluginClient };
+    return { server, pluginClient, semanticService, vectorStore };
 }
 
 export async function runServer(): Promise<void> {
-    const { server, pluginClient } = createServer();
+    const { server, pluginClient, semanticService, vectorStore } = createServer();
+
+    // Load existing index from storage
+    const existingNotes = await vectorStore.load();
+    semanticService.setNotes(existingNotes);
+
+    // Handle graceful shutdown to save index
+    const shutdown = async () => {
+        clearInterval(saveInterval);
+        logInfo("shutting down, saving vector index...");
+        await vectorStore.save(semanticService.getNotes());
+        process.exit(0);
+    };
+
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
+
+    // Periodically save index (every 5 minutes)
+    const saveInterval = setInterval(async () => {
+        await vectorStore.save(semanticService.getNotes());
+    }, 5 * 60 * 1000);
 
     try {
         await pluginClient.connect();

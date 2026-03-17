@@ -2,6 +2,13 @@
 
 A hybrid Model Context Protocol (MCP) ecosystem for Obsidian, providing vault-wide semantic intelligence and real-time editor context awareness.
 
+## Features
+
+- **Multilingual Semantic Search**: Powered by `intfloat/multilingual-e5-small`, allowing high-precision search across Japanese, English, and 100+ other languages.
+- **Real-time Editor Context**: AI awareness of the active file, cursor position, and text selection.
+- **Smart Note Management**: Precise CRUD operations for Markdown files and Frontmatter.
+- **Local-First Architecture**: All embeddings and indexing are performed locally on your machine for maximum privacy.
+
 ## Getting Started
 
 To use Obsidian Companion MCP, you need to set up both the Obsidian plugin and the MCP server.
@@ -13,7 +20,17 @@ To use Obsidian Companion MCP, you need to set up both the Obsidian plugin and t
 
 ### 2. Configure MCP Server
 
-The MCP server acts as a bridge between AI agents (like Claude Desktop) and Obsidian.
+The MCP server acts as a bridge between AI agents and Obsidian.
+
+#### Recommendation: Global Installation (Fastest)
+
+For the best performance and fastest startup, we recommend installing the package globally:
+
+```bash
+npm install -g @yama662607/obsidian-companion-mcp
+```
+
+Then, use the `obsidian-companion` command in your MCP configuration.
 
 #### Claude Desktop Configuration
 
@@ -22,6 +39,22 @@ Add the following to your `claude_desktop_config.json`:
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
+**Using Global Install (Recommended):**
+```json
+{
+  "mcpServers": {
+    "obsidian-companion": {
+      "command": "obsidian-companion",
+      "args": [],
+      "env": {
+        "OBSIDIAN_VAULT_PATH": "/absolute/path/to/your/obsidian/vault"
+      }
+    }
+  }
+}
+```
+
+**Using npx (Quick start, but slower):**
 ```json
 {
   "mcpServers": {
@@ -38,14 +71,14 @@ Add the following to your `claude_desktop_config.json`:
 
 #### Claude Code (CLI) Configuration
 
-Create a `.mcp.json` file in your project root or home directory with the following content:
+Create a `.mcp.json` file in your project root or home directory:
 
 ```json
 {
   "mcpServers": {
     "obsidian-companion": {
-      "command": "npx",
-      "args": ["-y", "@yama662607/obsidian-companion-mcp"],
+      "command": "obsidian-companion",
+      "args": [],
       "env": {
         "OBSIDIAN_VAULT_PATH": "/absolute/path/to/your/obsidian/vault"
       }
@@ -54,31 +87,25 @@ Create a `.mcp.json` file in your project root or home directory with the follow
 }
 ```
 
-*Note: Claude Code will automatically detect and load servers defined in `.mcp.json` when started in that directory.*
-
-#### Codex Configuration
-
-Add the following to your `~/.codex/config.toml`:
+#### Codex Configuration (`~/.codex/config.toml`)
 
 ```toml
 [mcpServers.obsidian-companion]
-command = "npx"
-args = ["-y", "@yama662607/obsidian-companion-mcp"]
+command = "obsidian-companion"
+args = []
 
 [mcpServers.obsidian-companion.env]
 OBSIDIAN_VAULT_PATH = "/absolute/path/to/your/obsidian/vault"
 ```
 
-#### Gemini CLI Configuration
-
-Add the following to your `.gemini/settings.json` (project-level) or `~/.gemini/settings.json` (user-level):
+#### Gemini CLI Configuration (`.gemini/settings.json`)
 
 ```json
 {
   "mcpServers": {
     "obsidian-companion": {
-      "command": "npx",
-      "args": ["-y", "@yama662607/obsidian-companion-mcp"],
+      "command": "obsidian-companion",
+      "args": [],
       "env": {
         "OBSIDIAN_VAULT_PATH": "/absolute/path/to/your/obsidian/vault"
       }
@@ -87,40 +114,13 @@ Add the following to your `.gemini/settings.json` (project-level) or `~/.gemini/
 }
 ```
 
-### Important: OBSIDIAN_VAULT_PATH
+### Important: OBSIDIAN_VAULT_PATH & Data Storage
 
 The `OBSIDIAN_VAULT_PATH` environment variable is **required**. 
 
 - **Full Mode**: When Obsidian is open and the plugin is active, the server provides real-time editor context (cursor position, active file) and high-performance semantic search.
-- **Degraded Mode**: If Obsidian is closed, the server automatically switches to "degraded mode," allowing basic note read/write operations by accessing your vault files directly via the file system.
-
-## Architecture
-
-This project consists of two main components:
-
-1.  **Plugin (`/plugin`)**: An Obsidian plugin that handles background indexing, semantic embedding generation, and exposes a local API for real-time editor context (cursor, selection, etc.).
-2.  **MCP (`/mcp`)**: A lightweight Node.js CLI that acts as an MCP server. It proxies requests from AI Agents (like Claude or Cursor) to the Obsidian Plugin.
-
-## npm Packages
-
-- **Canonical MCP package**: `@yama662607/obsidian-companion-mcp`
-- **Plugin package**: `@yama662607/obsidian-companion-plugin`
-
-`@yama662607/obsidian-companion-bridge` is deprecated and kept only as a migration alias.
-
-## Features (Planned)
-
-- **Semantic Search**: Meaning-based search across the entire vault.
-- **Editor Context**: AI awareness of the active file, cursor position, and text selection.
-- **Note Management**: Standard CRUD operations for Markdown files and Frontmatter.
-- **Smart Insertion**: Precise injection of content/links based on the user's current editing position.
-
-## Technical Stack
-
-- **Language**: TypeScript
-- **Runtime**: Node.js >= 20
-- **Semantic Engine**: Transformers.js (Local) or OpenAI API
-- **Communication**: Local WebSocket/HTTP MCP
+- **Degraded Mode**: If Obsidian is closed, the server automatically switches to "degraded mode," allowing basic note read/write operations by accessing your vault files directly.
+- **Storage**: The semantic model (~110MB) and the vector index are stored inside your vault at `.obsidian/plugins/companion-mcp/`. This ensures your index is portable and specific to each vault.
 
 ## Ecosystem & Synergy
 
@@ -138,4 +138,21 @@ AI agents perform best when they have a holistic view of your work. By enabling 
 2.  **Visualize & Edit** your diagrams to map out complex ideas.
 3.  **Synthesize** connections between visual models and text documentation.
 
-This combination transforms your Obsidian vault into a truly unified, multi-modal knowledge environment for AI collaboration.
+## Architecture
+
+This project consists of two main components:
+
+1.  **Plugin (`/plugin`)**: An Obsidian plugin that handles background indexing, semantic embedding generation, and exposes a local API for real-time editor context.
+2.  **MCP (`/mcp`)**: A lightweight Node.js CLI that acts as an MCP server. It proxies requests from AI Agents to the Obsidian Plugin.
+
+## npm Packages
+
+- **Canonical MCP package**: `@yama662607/obsidian-companion-mcp`
+- **Plugin package**: `@yama662607/obsidian-companion-plugin`
+
+## Technical Stack
+
+- **Language**: TypeScript
+- **Runtime**: Node.js >= 20
+- **Semantic Engine**: `intfloat/multilingual-e5-small` (Transformers.js)
+- **Communication**: Local Stdio MCP / JSON-RPC

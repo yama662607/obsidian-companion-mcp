@@ -235,17 +235,58 @@ var EditorService = class {
 };
 
 // src/domain/embeddingProvider.ts
+import { pipeline, env } from "@xenova/transformers";
+import path from "path";
+import os from "os";
+import fs from "fs";
 var LocalEmbeddingProvider = class {
   kind = "local";
-  async embed(text) {
-    const normalized = text.trim().toLowerCase();
-    const score = normalized.length;
-    return [score, score / 2, score / 3];
+  extractor = null;
+  modelName = "Xenova/multilingual-e5-small";
+  constructor() {
+    const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
+    let modelDir;
+    if (vaultPath) {
+      modelDir = path.join(
+        vaultPath,
+        ".obsidian",
+        "plugins",
+        "companion-mcp",
+        "models"
+      );
+    } else {
+      modelDir = path.join(os.homedir(), ".cache", "obsidian-companion-mcp", "models");
+    }
+    if (!fs.existsSync(modelDir)) {
+      fs.mkdirSync(modelDir, { recursive: true });
+    }
+    env.allowRemoteModels = true;
+    env.localModelPath = modelDir;
+    env.cacheDir = modelDir;
+  }
+  async getExtractor() {
+    if (!this.extractor) {
+      this.extractor = await pipeline("feature-extraction", this.modelName);
+    }
+    return this.extractor;
+  }
+  /**
+   * Generate embeddings using multilingual-e5-small.
+   * E5 models require "query: " or "passage: " prefix for optimal performance.
+   */
+  async embed(text, isQuery = false) {
+    const extractor = await this.getExtractor();
+    const prefix = isQuery ? "query: " : "passage: ";
+    const output = await extractor(`${prefix}${text}`, {
+      pooling: "mean",
+      normalize: true
+    });
+    return Array.from(output.data);
   }
 };
 var RemoteEmbeddingProvider = class {
   kind = "remote";
-  async embed(text) {
+  async embed(text, isQuery = false) {
     const normalized = text.trim().toLowerCase();
     const score = normalized.length + 1;
     return [score, score / 2, score / 4];
@@ -298,6 +339,14 @@ var IndexingQueue = class {
 };
 
 // src/domain/semanticService.ts
+function cosineSimilarity(a, b) {
+  let dotProduct = 0;
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i += 1) {
+    dotProduct += a[i] * b[i];
+  }
+  return dotProduct;
+}
 var SemanticService = class {
   notes = /* @__PURE__ */ new Map();
   queue = new IndexingQueue();
@@ -305,12 +354,12 @@ var SemanticService = class {
   constructor(preferRemote = false) {
     this.provider = createEmbeddingProvider(preferRemote);
   }
-  queueIndex(path2, snippet, updatedAt) {
-    this.queue.enqueue({ path: path2, content: snippet, updatedAt });
+  queueIndex(path4, snippet, updatedAt) {
+    this.queue.enqueue({ path: path4, content: snippet, updatedAt });
   }
   async flushIndex(maxItems = 25) {
     return this.queue.process(async (job) => {
-      const embedding = await this.provider.embed(job.content);
+      const embedding = await this.provider.embed(job.content, false);
       this.notes.set(job.path, {
         path: job.path,
         snippet: job.content,
@@ -319,11 +368,11 @@ var SemanticService = class {
       });
     }, maxItems);
   }
-  upsert(path2, snippet, updatedAt) {
-    this.queueIndex(path2, snippet, updatedAt);
+  upsert(path4, snippet, updatedAt) {
+    this.queueIndex(path4, snippet, updatedAt);
   }
-  remove(path2) {
-    this.notes.delete(path2);
+  remove(path4) {
+    this.notes.delete(path4);
   }
   getIndexStatus() {
     const pendingCount = this.queue.getPendingCount();
@@ -338,29 +387,43 @@ var SemanticService = class {
   }
   async searchWithStatus(query, limit) {
     await this.flushIndex(Math.max(limit * 2, 10));
+    const matches = await this.search(query, limit);
     return {
-      matches: this.search(query, limit),
+      matches,
       indexStatus: this.getIndexStatus()
     };
   }
   /**
-   * STUB IMPLEMENTATION:
-   * Current search uses simple substring matching for deterministic local behavior.
-   * The embedding vector is stored for future semantic ranking integration.
+   * ACTUAL SEMANTIC SEARCH IMPLEMENTATION:
+   * 1. Embed query with "query: " prefix.
+   * 2. Calculate cosine similarity against all indexed notes.
+   * 3. Sort by score and return top results.
    */
-  search(query, limit) {
-    const q = query.toLowerCase();
-    return Array.from(this.notes.values()).map((note) => ({
-      path: note.path,
-      snippet: note.snippet,
-      score: note.snippet.toLowerCase().includes(q) ? 0.9 : 0.2
-    })).sort((a, b) => b.score - a.score).slice(0, limit);
+  async search(query, limit) {
+    if (this.notes.size === 0) return [];
+    const queryVector = await this.provider.embed(query, true);
+    return Array.from(this.notes.values()).map((note) => {
+      const score = cosineSimilarity(queryVector, note.embedding);
+      return {
+        path: note.path,
+        snippet: note.snippet,
+        score
+      };
+    }).sort((a, b) => b.score - a.score).slice(0, limit);
+  }
+  // For testing/internal use
+  getNotes() {
+    return this.notes;
+  }
+  // Replace entire index (useful for loading from storage)
+  setNotes(notes) {
+    this.notes = notes;
   }
 };
 
 // src/infra/fallbackStorage.ts
-import * as fs from "fs";
-import * as path from "path";
+import * as fs2 from "fs";
+import * as path2 from "path";
 var VAULT_PATH_ENV = "OBSIDIAN_VAULT_PATH";
 function detectEol(content) {
   return content.includes("\r\n") ? "\r\n" : "\n";
@@ -441,69 +504,69 @@ function getVaultRoot() {
   if (!configured) {
     throw new DomainError("UNAVAILABLE", `${VAULT_PATH_ENV} is required for note operations`);
   }
-  return path.resolve(configured);
+  return path2.resolve(configured);
 }
 function resolveVaultPath(notePath) {
   if (!notePath) {
     throw new DomainError("VALIDATION", "path is required");
   }
-  const normalized = path.posix.normalize(notePath.replaceAll("\\", "/"));
+  const normalized = path2.posix.normalize(notePath.replaceAll("\\", "/"));
   if (normalized.startsWith("/") || normalized === ".." || normalized.startsWith("../")) {
     throw new DomainError("VALIDATION", `Invalid vault-relative path: ${notePath}`);
   }
   const vaultRoot = getVaultRoot();
-  const resolved = path.resolve(vaultRoot, normalized);
-  const relative2 = path.relative(vaultRoot, resolved);
-  if (relative2 === ".." || relative2.startsWith(`..${path.sep}`) || path.isAbsolute(relative2)) {
+  const resolved = path2.resolve(vaultRoot, normalized);
+  const relative2 = path2.relative(vaultRoot, resolved);
+  if (relative2 === ".." || relative2.startsWith(`..${path2.sep}`) || path2.isAbsolute(relative2)) {
     throw new DomainError("VALIDATION", `Path escapes vault root: ${notePath}`);
   }
   return resolved;
 }
 function ensureParentDir(filePath) {
-  const dir = path.dirname(filePath);
-  fs.mkdirSync(dir, { recursive: true });
+  const dir = path2.dirname(filePath);
+  fs2.mkdirSync(dir, { recursive: true });
 }
-function readNote(path2) {
-  const filePath = resolveVaultPath(path2);
-  if (!fs.existsSync(filePath)) {
+function readNote(path4) {
+  const filePath = resolveVaultPath(path4);
+  if (!fs2.existsSync(filePath)) {
     return void 0;
   }
-  const content = fs.readFileSync(filePath, "utf8");
+  const content = fs2.readFileSync(filePath, "utf8");
   return {
     content,
     metadata: parseFrontmatter(content)
   };
 }
-function writeNote(path2, content) {
-  const filePath = resolveVaultPath(path2);
-  const existing = readNote(path2);
+function writeNote(path4, content) {
+  const filePath = resolveVaultPath(path4);
+  const existing = readNote(path4);
   const metadata = existing?.metadata ?? {};
   const next = {
     content: applyFrontmatter(content, metadata),
     metadata
   };
   ensureParentDir(filePath);
-  fs.writeFileSync(filePath, next.content, "utf8");
+  fs2.writeFileSync(filePath, next.content, "utf8");
   return next;
 }
-function updateMetadata(path2, metadata) {
-  const filePath = resolveVaultPath(path2);
-  const existing = readNote(path2) ?? { content: "", metadata: {} };
+function updateMetadata(path4, metadata) {
+  const filePath = resolveVaultPath(path4);
+  const existing = readNote(path4) ?? { content: "", metadata: {} };
   const mergedMetadata = { ...existing.metadata, ...metadata };
   const next = {
     content: applyFrontmatter(existing.content, mergedMetadata),
     metadata: mergedMetadata
   };
   ensureParentDir(filePath);
-  fs.writeFileSync(filePath, next.content, "utf8");
+  fs2.writeFileSync(filePath, next.content, "utf8");
   return next;
 }
-function deleteNote(path2) {
-  const filePath = resolveVaultPath(path2);
-  if (!fs.existsSync(filePath)) {
+function deleteNote(path4) {
+  const filePath = resolveVaultPath(path4);
+  if (!fs2.existsSync(filePath)) {
     return false;
   }
-  fs.rmSync(filePath);
+  fs2.rmSync(filePath);
   return true;
 }
 
@@ -513,18 +576,18 @@ var NoteService = class {
     this.pluginClient = pluginClient;
     this.semanticService = semanticService;
   }
-  async read(path2) {
+  async read(path4) {
     try {
-      await this.pluginClient.send("notes.read", { path: path2 });
-      const hit = readNote(path2);
+      await this.pluginClient.send("notes.read", { path: path4 });
+      const hit = readNote(path4);
       if (!hit) {
-        throw new DomainError("NOT_FOUND", `Note not found: ${path2}`);
+        throw new DomainError("NOT_FOUND", `Note not found: ${path4}`);
       }
       return { content: hit.content, metadata: hit.metadata, degraded: false, degradedReason: null };
     } catch {
-      const hit = readNote(path2);
+      const hit = readNote(path4);
       if (!hit) {
-        throw new DomainError("NOT_FOUND", `Note not found: ${path2}`);
+        throw new DomainError("NOT_FOUND", `Note not found: ${path4}`);
       }
       return {
         content: hit.content,
@@ -534,58 +597,110 @@ var NoteService = class {
       };
     }
   }
-  async write(path2, content) {
-    if (!path2) {
+  async write(path4, content) {
+    if (!path4) {
       throw new DomainError("VALIDATION", "path is required");
     }
     try {
-      await this.pluginClient.send("notes.write", { path: path2, content });
-      const record = writeNote(path2, content);
-      this.semanticService?.upsert(path2, record.content, Date.now());
-      return { path: path2, degraded: false, degradedReason: null };
+      await this.pluginClient.send("notes.write", { path: path4, content });
+      const record = writeNote(path4, content);
+      this.semanticService?.upsert(path4, record.content, Date.now());
+      return { path: path4, degraded: false, degradedReason: null };
     } catch {
-      const record = writeNote(path2, content);
-      this.semanticService?.upsert(path2, record.content, Date.now());
-      return { path: path2, degraded: true, degradedReason: "plugin_unavailable" };
+      const record = writeNote(path4, content);
+      this.semanticService?.upsert(path4, record.content, Date.now());
+      return { path: path4, degraded: true, degradedReason: "plugin_unavailable" };
     }
   }
-  async delete(path2) {
+  async delete(path4) {
     try {
-      await this.pluginClient.send("notes.delete", { path: path2 });
-      const deleted = deleteNote(path2);
+      await this.pluginClient.send("notes.delete", { path: path4 });
+      const deleted = deleteNote(path4);
       if (!deleted) {
-        throw new DomainError("NOT_FOUND", `Note not found: ${path2}`);
+        throw new DomainError("NOT_FOUND", `Note not found: ${path4}`);
       }
-      this.semanticService?.remove(path2);
+      this.semanticService?.remove(path4);
       return { deleted: true, degraded: false, degradedReason: null };
     } catch (error) {
       if (error instanceof DomainError && error.code === "NOT_FOUND") {
         throw error;
       }
-      const deleted = deleteNote(path2);
+      const deleted = deleteNote(path4);
       if (!deleted) {
-        throw new DomainError("NOT_FOUND", `Note not found: ${path2}`);
+        throw new DomainError("NOT_FOUND", `Note not found: ${path4}`);
       }
-      this.semanticService?.remove(path2);
+      this.semanticService?.remove(path4);
       return { deleted: true, degraded: true, degradedReason: "plugin_unavailable" };
     }
   }
-  async updateMetadata(path2, metadata) {
+  async updateMetadata(path4, metadata) {
     try {
-      await this.pluginClient.send("metadata.update", { path: path2, metadata });
-      const record = updateMetadata(path2, metadata);
-      this.semanticService?.upsert(path2, record.content, Date.now());
-      return { path: path2, metadata: record.metadata, degraded: false, degradedReason: null };
+      await this.pluginClient.send("metadata.update", { path: path4, metadata });
+      const record = updateMetadata(path4, metadata);
+      this.semanticService?.upsert(path4, record.content, Date.now());
+      return { path: path4, metadata: record.metadata, degraded: false, degradedReason: null };
     } catch {
-      const record = updateMetadata(path2, metadata);
-      this.semanticService?.upsert(path2, record.content, Date.now());
+      const record = updateMetadata(path4, metadata);
+      this.semanticService?.upsert(path4, record.content, Date.now());
       return {
-        path: path2,
+        path: path4,
         metadata: record.metadata,
         degraded: true,
         degradedReason: "plugin_unavailable"
       };
     }
+  }
+};
+
+// src/infra/vectorStore.ts
+import fs3 from "fs";
+import path3 from "path";
+var VectorStore = class {
+  indexPath;
+  constructor() {
+    const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
+    if (vaultPath) {
+      this.indexPath = path3.join(
+        vaultPath,
+        ".obsidian",
+        "plugins",
+        "companion-mcp",
+        "data",
+        "semantic-index.json"
+      );
+    } else {
+      this.indexPath = path3.join(process.cwd(), "semantic-index.json");
+    }
+  }
+  async load() {
+    try {
+      if (!fs3.existsSync(this.indexPath)) {
+        return /* @__PURE__ */ new Map();
+      }
+      const raw = fs3.readFileSync(this.indexPath, "utf-8");
+      const data = JSON.parse(raw);
+      logInfo(`vector index loaded: ${data.length} notes from ${this.indexPath}`);
+      return new Map(data);
+    } catch (error) {
+      logError(`failed to load vector index: ${error}`);
+      return /* @__PURE__ */ new Map();
+    }
+  }
+  async save(notes) {
+    try {
+      const dir = path3.dirname(this.indexPath);
+      if (!fs3.existsSync(dir)) {
+        fs3.mkdirSync(dir, { recursive: true });
+      }
+      const data = Array.from(notes.entries());
+      fs3.writeFileSync(this.indexPath, JSON.stringify(data), "utf-8");
+      logInfo(`vector index saved: ${notes.size} notes to ${this.indexPath}`);
+    } catch (error) {
+      logError(`failed to save vector index: ${error}`);
+    }
+  }
+  getIndexPath() {
+    return this.indexPath;
   }
 };
 
@@ -1229,6 +1344,7 @@ function createServer() {
   const pluginClient = new PluginClient();
   const editorService = new EditorService(pluginClient);
   const semanticService = new SemanticService();
+  const vectorStore = new VectorStore();
   const noteService = new NoteService(pluginClient, semanticService);
   registerSemanticSearchTool(server, semanticService);
   registerEditorTools(server, editorService);
@@ -1242,10 +1358,23 @@ function createServer() {
   registerContextRewritePrompt(server);
   registerSearchThenInsertPrompt(server);
   registerAgentRuntimeReviewPrompt(server);
-  return { server, pluginClient };
+  return { server, pluginClient, semanticService, vectorStore };
 }
 async function runServer() {
-  const { server, pluginClient } = createServer();
+  const { server, pluginClient, semanticService, vectorStore } = createServer();
+  const existingNotes = await vectorStore.load();
+  semanticService.setNotes(existingNotes);
+  const shutdown = async () => {
+    clearInterval(saveInterval);
+    logInfo("shutting down, saving vector index...");
+    await vectorStore.save(semanticService.getNotes());
+    process.exit(0);
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+  const saveInterval = setInterval(async () => {
+    await vectorStore.save(semanticService.getNotes());
+  }, 5 * 60 * 1e3);
   try {
     await pluginClient.connect();
     logInfo("startup handshake completed");

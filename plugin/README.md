@@ -1,75 +1,26 @@
 # @yama662607/obsidian-companion-plugin
 
-Obsidian plugin package for Companion MCP integration.
+Obsidian plugin package for Companion MCP integration. This plugin serves as the Obsidian-side runtime for semantic indexing and editor context.
 
 ## Installation
 
-Install as an Obsidian community/development plugin build output.
+1. Build the plugin: `just build`
+2. Copy `dist/plugin-release/*` to `[YourVault]/.obsidian/plugins/companion-mcp/`
+3. Enable "Companion MCP" in Obsidian settings.
 
-## Usage
+## Data Storage
 
-- Build the plugin with the project build command.
-- Place output artifacts into your Obsidian vault plugin directory.
+This plugin creates a data directory at `.obsidian/plugins/companion-mcp/` within your vault to store:
+- **`data/semantic-index.json`**: The cached vector embeddings for your notes.
+- **`models/`**: The local AI model files (`multilingual-e5-small`) used for semantic search.
 
-## MCP Tool Setup
+This ensures your semantic index is portable and remains private within your vault.
 
-This plugin is the Obsidian-side runtime. AI agents connect to the mcp MCP server, not directly to this plugin package.
+## Compatibility
 
-1. Build and install both plugin and mcp.
-2. Enable the plugin in Obsidian.
-3. Configure your agent MCP settings to launch the mcp.
+- **Minimum Obsidian Version**: 1.5.0
+- **Supported Platforms**: Desktop (macOS, Windows, Linux)
 
-Example MCP server configuration:
+## Related MCP Server
 
-```json
-{
-	"mcpServers": {
-		"obsidian-companion": {
-			"command": "npx",
-			"args": [
-				"-y",
-				"@yama662607/obsidian-companion-mcp"
-			],
-			"env": {
-				"OBSIDIAN_VAULT_PATH": "/absolute/path/to/YourVault"
-			}
-		}
-	}
-}
-```
-
-Local mcp path alternative:
-
-```json
-{
-	"mcpServers": {
-		"obsidian-companion": {
-			"command": "node",
-			"args": [
-				"/absolute/path/to/obsidian-companion-mcp/mcp/dist/index.js"
-			],
-			"env": {
-				"OBSIDIAN_VAULT_PATH": "/absolute/path/to/YourVault"
-			}
-		}
-	}
-}
-```
-
-`OBSIDIAN_VAULT_PATH` is required. All note read/write/delete operations are resolved relative to this vault path, regardless of the directory where the agent process starts. `OBSIDIAN_COMPANION_API_KEY` is no longer required.
-
-Expected tools after successful startup:
-
-- search_notes_semantic
-- get_active_context
-- insert_at_cursor
-- replace_range
-- create_note
-- get_note
-- update_note_content
-- delete_note
-- update_note_metadata
-
-## Notes
-
-- Exposes editor context and semantic operations to the mcp over local transport.
+This plugin is designed to work with the `@yama662607/obsidian-companion-mcp` server package. See the root README for configuration instructions for AI agents.

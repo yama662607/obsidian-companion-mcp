@@ -8,6 +8,20 @@ type IndexedNote = {
 import { createEmbeddingProvider, type EmbeddingProvider } from "./embeddingProvider";
 import { IndexingQueue } from "./indexingQueue";
 
+/**
+ * Calculates cosine similarity between two vectors.
+ * Since vectors from our provider are already normalized (length = 1),
+ * cosine similarity is equal to the dot product.
+ */
+function cosineSimilarity(a: number[], b: number[]): number {
+    let dotProduct = 0;
+    const len = Math.min(a.length, b.length);
+    for (let i = 0; i < len; i += 1) {
+        dotProduct += a[i] * b[i];
+    }
+    return dotProduct;
+}
+
 export class SemanticService {
     private notes = new Map<string, IndexedNote>();
     private queue = new IndexingQueue();
@@ -23,7 +37,8 @@ export class SemanticService {
 
     async flushIndex(maxItems = 25): Promise<number> {
         return this.queue.process(async (job) => {
-            const embedding = await this.provider.embed(job.content);
+            // Document embeddings use "passage: " prefix
+            const embedding = await this.provider.embed(job.content, false);
             this.notes.set(job.path, {
                 path: job.path,
                 snippet: job.content,
@@ -61,26 +76,45 @@ export class SemanticService {
         indexStatus: { pendingCount: number; indexedCount: number; running: boolean; ready: boolean; isEmpty: boolean };
     }> {
         await this.flushIndex(Math.max(limit * 2, 10));
+        const matches = await this.search(query, limit);
         return {
-            matches: this.search(query, limit),
+            matches,
             indexStatus: this.getIndexStatus(),
         };
     }
 
     /**
-     * STUB IMPLEMENTATION:
-     * Current search uses simple substring matching for deterministic local behavior.
-     * The embedding vector is stored for future semantic ranking integration.
+     * ACTUAL SEMANTIC SEARCH IMPLEMENTATION:
+     * 1. Embed query with "query: " prefix.
+     * 2. Calculate cosine similarity against all indexed notes.
+     * 3. Sort by score and return top results.
      */
-    search(query: string, limit: number): Array<{ path: string; score: number; snippet: string }> {
-        const q = query.toLowerCase();
+    async search(query: string, limit: number): Promise<Array<{ path: string; score: number; snippet: string }>> {
+        if (this.notes.size === 0) return [];
+
+        // Query embedding uses "query: " prefix
+        const queryVector = await this.provider.embed(query, true);
+
         return Array.from(this.notes.values())
-            .map((note) => ({
-                path: note.path,
-                snippet: note.snippet,
-                score: note.snippet.toLowerCase().includes(q) ? 0.9 : 0.2,
-            }))
+            .map((note) => {
+                const score = cosineSimilarity(queryVector, note.embedding);
+                return {
+                    path: note.path,
+                    snippet: note.snippet,
+                    score,
+                };
+            })
             .sort((a, b) => b.score - a.score)
             .slice(0, limit);
+    }
+
+    // For testing/internal use
+    getNotes(): Map<string, IndexedNote> {
+        return this.notes;
+    }
+
+    // Replace entire index (useful for loading from storage)
+    setNotes(notes: Map<string, IndexedNote>): void {
+        this.notes = notes;
     }
 }
