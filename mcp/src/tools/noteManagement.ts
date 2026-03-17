@@ -1,16 +1,35 @@
+import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { DomainError } from "../domain/errors";
 import { okResult, errorResult } from "../domain/toolResult";
 import type { NoteService } from "../domain/noteService";
 import { TOOL_NAMES } from "../constants/toolNames";
-import {
-    createNoteInputSchema,
-    getNoteInputSchema,
-    updateNoteContentInputSchema,
-    deleteNoteInputSchema,
-    updateNoteMetadataInputSchema,
-} from "../schemas/notes";
-import { refreshSemanticIndexInputSchema } from "../schemas/refresh";
+
+// Define schemas directly in the tool file to ensure Zod instances are preserved
+const createNoteInputSchema = z.object({
+    path: z.string().describe("Vault-relative path (e.g., 'notes/idea.md')"),
+    content: z.string().describe("Full markdown content"),
+});
+
+const getNoteInputSchema = z.object({
+    path: z.string().describe("Vault-relative path"),
+});
+
+const updateNoteContentInputSchema = z.object({
+    path: z.string().describe("Vault-relative path"),
+    content: z.string().describe("New full content"),
+});
+
+const deleteNoteInputSchema = z.object({
+    path: z.string().describe("Vault-relative path"),
+});
+
+const updateNoteMetadataInputSchema = z.object({
+    path: z.string().describe("Vault-relative path"),
+    metadata: z.record(z.any()).describe("Key-value pairs for frontmatter"),
+});
+
+const refreshSemanticIndexInputSchema = z.object({});
 
 export function registerNoteTool(server: McpServer, noteService: NoteService): void {
     server.registerTool(
@@ -19,8 +38,9 @@ export function registerNoteTool(server: McpServer, noteService: NoteService): v
             description: "Scan all markdown files in the vault and update the semantic index.",
             inputSchema: refreshSemanticIndexInputSchema,
         },
-        async () => {
+        async (params) => {
             try {
+                // Ensure params is received, even if empty, to satisfy SDK validation
                 const stats = await noteService.refreshIndex();
                 const summary = `Scan complete. Found ${stats.totalFound} notes, queued ${stats.updatedCount} for indexing.`;
                 return okResult(summary, stats);

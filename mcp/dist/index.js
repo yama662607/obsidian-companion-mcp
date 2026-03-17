@@ -813,18 +813,16 @@ var TOOL_NAME_LIST = [
 ];
 
 // src/tools/semanticSearch.ts
+var searchNotesSemanticInputSchema = z.object({
+  query: z.string().describe("Natural language search query (multilingual)"),
+  limit: z.number().optional().default(10).describe("Maximum number of results to return")
+});
 function registerSemanticSearchTool(server, semanticService) {
   server.registerTool(
     TOOL_NAMES.SEARCH_NOTES_SEMANTIC,
     {
-      description: "Search notes semantically and return ranked matches with snippets.",
-      inputSchema: z.object({
-        query: z.string().min(1).describe("Semantic search query text"),
-        limit: z.number().int().min(1).max(50).default(10).describe("Maximum number of ranked matches")
-      }),
-      annotations: {
-        readOnlyHint: true
-      }
+      description: "Perform semantic (vector-based) search on your notes.",
+      inputSchema: searchNotesSemanticInputSchema
     },
     async (params) => {
       try {
@@ -961,7 +959,7 @@ function registerEditorTools(server, editorService) {
   );
 }
 
-// src/schemas/notes.ts
+// src/tools/noteManagement.ts
 import { z as z4 } from "zod";
 var createNoteInputSchema = z4.object({
   path: z4.string().describe("Vault-relative path (e.g., 'notes/idea.md')"),
@@ -981,12 +979,7 @@ var updateNoteMetadataInputSchema = z4.object({
   path: z4.string().describe("Vault-relative path"),
   metadata: z4.record(z4.any()).describe("Key-value pairs for frontmatter")
 });
-
-// src/schemas/refresh.ts
-import { z as z5 } from "zod";
-var refreshSemanticIndexInputSchema = z5.object({});
-
-// src/tools/noteManagement.ts
+var refreshSemanticIndexInputSchema = z4.object({});
 function registerNoteTool(server, noteService) {
   server.registerTool(
     TOOL_NAMES.REFRESH_SEMANTIC_INDEX,
@@ -994,7 +987,7 @@ function registerNoteTool(server, noteService) {
       description: "Scan all markdown files in the vault and update the semantic index.",
       inputSchema: refreshSemanticIndexInputSchema
     },
-    async () => {
+    async (params) => {
       try {
         const stats = await noteService.refreshIndex();
         const summary = `Scan complete. Found ${stats.totalFound} notes, queued ${stats.updatedCount} for indexing.`;
@@ -1322,7 +1315,7 @@ function registerReviewChecklistResource(server) {
 }
 
 // src/prompts/contextRewrite.ts
-import { z as z6 } from "zod";
+import { z as z5 } from "zod";
 function registerContextRewritePrompt(server) {
   server.registerPrompt(
     PROMPT_NAMES.CONTEXT_REWRITE,
@@ -1330,7 +1323,7 @@ function registerContextRewritePrompt(server) {
       title: "Context-aware Rewrite",
       description: "Rewrite currently selected text while preserving local context",
       argsSchema: {
-        style: z6.string().min(1).optional()
+        style: z5.string().min(1).optional()
       }
     },
     async (args) => {
@@ -1355,7 +1348,7 @@ function registerContextRewritePrompt(server) {
 }
 
 // src/prompts/searchThenInsert.ts
-import { z as z7 } from "zod";
+import { z as z6 } from "zod";
 function registerSearchThenInsertPrompt(server) {
   server.registerPrompt(
     PROMPT_NAMES.SEARCH_THEN_INSERT,
@@ -1363,7 +1356,7 @@ function registerSearchThenInsertPrompt(server) {
       title: "Search Then Insert",
       description: "Find relevant context semantically and insert a concise note at cursor",
       argsSchema: {
-        query: z7.string().min(1)
+        query: z6.string().min(1)
       }
     },
     async (args) => ({
@@ -1385,7 +1378,7 @@ function registerSearchThenInsertPrompt(server) {
 }
 
 // src/prompts/agentRuntimeReview.ts
-import { z as z8 } from "zod";
+import { z as z7 } from "zod";
 function registerAgentRuntimeReviewPrompt(server) {
   server.registerPrompt(
     PROMPT_NAMES.AGENT_RUNTIME_REVIEW,
@@ -1393,8 +1386,8 @@ function registerAgentRuntimeReviewPrompt(server) {
       title: "Agent Runtime Review",
       description: "Generate a focused runtime and MCP contract review request for an agent",
       argsSchema: {
-        scope: z8.string().min(1).describe("Review scope, file set, or capability area"),
-        severityThreshold: z8.enum(["high", "medium", "low"]).default("medium")
+        scope: z7.string().min(1).describe("Review scope, file set, or capability area"),
+        severityThreshold: z7.enum(["high", "medium", "low"]).default("medium")
       }
     },
     async (args) => ({

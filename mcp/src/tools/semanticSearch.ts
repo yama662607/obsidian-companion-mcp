@@ -1,22 +1,21 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { okResult, errorResult } from "../domain/toolResult";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { DomainError } from "../domain/errors";
-import type { SemanticService } from "../domain/semanticService";
+import { okResult, errorResult } from "../domain/toolResult";
 import { TOOL_NAMES } from "../constants/toolNames";
+import type { SemanticService } from "../domain/semanticService";
+
+const searchNotesSemanticInputSchema = z.object({
+    query: z.string().describe("Natural language search query (multilingual)"),
+    limit: z.number().optional().default(10).describe("Maximum number of results to return"),
+});
 
 export function registerSemanticSearchTool(server: McpServer, semanticService: SemanticService): void {
     server.registerTool(
         TOOL_NAMES.SEARCH_NOTES_SEMANTIC,
         {
-            description: "Search notes semantically and return ranked matches with snippets.",
-            inputSchema: z.object({
-                query: z.string().min(1).describe("Semantic search query text"),
-                limit: z.number().int().min(1).max(50).default(10).describe("Maximum number of ranked matches"),
-            }),
-            annotations: {
-                readOnlyHint: true,
-            },
+            description: "Perform semantic (vector-based) search on your notes.",
+            inputSchema: searchNotesSemanticInputSchema,
         },
         async (params) => {
             try {
