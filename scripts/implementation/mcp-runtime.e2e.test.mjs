@@ -261,6 +261,75 @@ test("mcp e2e: startup can discover vault path from plugin handshake", async (t)
     );
 });
 
+test("mcp e2e: delete_note returns success when plugin already removed the file", async (t) => {
+    const discoveredVaultRoot = path.join(repoRoot, ".tmp", "mcp-e2e-delete-via-plugin");
+    const notePath = "1_Inbox/plugin-delete.md";
+    const absoluteNotePath = path.join(discoveredVaultRoot, notePath);
+
+    fs.rmSync(discoveredVaultRoot, { recursive: true, force: true });
+    fs.mkdirSync(path.dirname(absoluteNotePath), { recursive: true });
+    fs.writeFileSync(absoluteNotePath, "# plugin delete test\n", "utf8");
+
+    const mockPlugin = await startMockPluginServer((request) => {
+        if (request.method === "health.ping") {
+            return {
+                jsonrpc: "2.0",
+                id: request.id,
+                protocolVersion: request.protocolVersion,
+                result: {
+                    capabilities: ["health.ping", "notes.delete"],
+                    availability: "normal",
+                    configDir: ".obsidian",
+                    vaultPath: discoveredVaultRoot,
+                },
+            };
+        }
+
+        if (request.method === "notes.delete") {
+            fs.rmSync(absoluteNotePath, { force: true });
+            return {
+                jsonrpc: "2.0",
+                id: request.id,
+                protocolVersion: request.protocolVersion,
+                result: { success: true },
+            };
+        }
+
+        return {
+            jsonrpc: "2.0",
+            id: request.id,
+            error: {
+                code: "UNAVAILABLE",
+                message: "mock plugin only supports health.ping and notes.delete",
+                data: { correlationId: "corr-mock-plugin-delete" },
+            },
+        };
+    });
+
+    const session = await createMcpClient({
+        includeDefaultVaultPath: false,
+        unsetEnvKeys: ["OBSIDIAN_VAULT_PATH", "OBSIDIAN_CONFIG_DIR"],
+        envOverrides: {
+            OBSIDIAN_PLUGIN_PORT: String(mockPlugin.port),
+        },
+    });
+
+    t.after(async () => {
+        await session.close();
+        await mockPlugin.close();
+    });
+
+    const deleted = await session.client.callTool({
+        name: "delete_note",
+        arguments: { path: notePath },
+    });
+
+    assert.ok(!deleted.isError);
+    assert.equal(deleted.structuredContent.deleted, true);
+    assert.equal(deleted.structuredContent.degraded, false);
+    assert.equal(fs.existsSync(absoluteNotePath), false);
+});
+
 test("mcp e2e: runtime status resource is readable", async (t) => {
     const session = await createMcpClient();
     t.after(async () => {

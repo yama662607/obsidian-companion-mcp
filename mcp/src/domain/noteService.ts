@@ -56,10 +56,6 @@ export class NoteService {
     async delete(path: string): Promise<{ deleted: boolean; degraded: boolean; degradedReason: string | null }> {
         try {
             await this.pluginClient.send("notes.delete", { path });
-            const deleted = fallback.deleteNote(path);
-            if (!deleted) {
-                throw new DomainError("NOT_FOUND", `Note not found: ${path}`);
-            }
             this.semanticService?.remove(path);
             return { deleted: true, degraded: false, degradedReason: null };
         } catch (error) {
