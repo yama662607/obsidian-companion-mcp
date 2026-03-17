@@ -164,6 +164,15 @@ plugin-release-prepare:
 plugin-install-local vault_path:
     @bash scripts/release/install-plugin-to-vault.sh "{{ vault_path }}"
 
+# Install/update plugin into the vault pointed to by OBSIDIAN_VAULT_PATH
+plugin-install:
+    @if [ -z "${OBSIDIAN_VAULT_PATH:-}" ]; then \
+        echo "Error: OBSIDIAN_VAULT_PATH is not set."; \
+        echo "Usage: OBSIDIAN_VAULT_PATH=/absolute/path/to/vault just plugin-install"; \
+        exit 1; \
+    fi
+    @bash scripts/release/install-plugin-to-vault.sh "${OBSIDIAN_VAULT_PATH}"
+
 # =============================================================================
 # Dependency Management
 # =============================================================================

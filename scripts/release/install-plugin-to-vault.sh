@@ -15,7 +15,7 @@ TARGET_DIR="$VAULT_DIR/.obsidian/plugins/$PLUGIN_ID"
 cd "$PLUGIN_DIR"
 npm run build
 
-required=("main.js" "manifest.json")
+required=("main.js" "manifest.json" "versions.json")
 for file in "${required[@]}"; do
   if [[ ! -f "$PLUGIN_DIR/$file" ]]; then
     echo "Missing required plugin file: $file" >&2
@@ -26,6 +26,7 @@ done
 mkdir -p "$TARGET_DIR"
 cp "$PLUGIN_DIR/main.js" "$TARGET_DIR/main.js"
 cp "$PLUGIN_DIR/manifest.json" "$TARGET_DIR/manifest.json"
+cp "$PLUGIN_DIR/versions.json" "$TARGET_DIR/versions.json"
 if [[ -f "$PLUGIN_DIR/styles.css" ]]; then
   cp "$PLUGIN_DIR/styles.css" "$TARGET_DIR/styles.css"
 fi
