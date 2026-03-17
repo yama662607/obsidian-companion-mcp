@@ -1,25 +1,24 @@
 import { z } from "zod";
-import { notePathSchema } from "./common";
 
 export const createNoteInputSchema = z.object({
-    path: notePathSchema,
-    content: z.string().default("").describe("Initial markdown content for the note"),
+    path: z.string().describe("Vault-relative path (e.g., 'notes/idea.md')"),
+    content: z.string().describe("Full markdown content"),
 });
 
 export const getNoteInputSchema = z.object({
-    path: notePathSchema,
+    path: z.string().describe("Vault-relative path"),
 });
 
 export const updateNoteContentInputSchema = z.object({
-    path: notePathSchema,
-    content: z.string().describe("Full markdown content to replace the note body"),
+    path: z.string().describe("Vault-relative path"),
+    content: z.string().describe("New full content"),
 });
 
 export const deleteNoteInputSchema = z.object({
-    path: notePathSchema.describe("Vault-relative markdown note path to delete"),
+    path: z.string().describe("Vault-relative path"),
 });
 
 export const updateNoteMetadataInputSchema = z.object({
-    path: notePathSchema,
-    metadata: z.record(z.unknown()).describe("Frontmatter key/value patch to merge"),
+    path: z.string().describe("Vault-relative path"),
+    metadata: z.record(z.any()).describe("Key-value pairs for frontmatter"),
 });

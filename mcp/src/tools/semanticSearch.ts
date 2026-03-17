@@ -22,10 +22,13 @@ export function registerSemanticSearchTool(server: McpServer, semanticService: S
             try {
                 const result = await semanticService.searchWithStatus(params.query, params.limit);
                 let summary: string;
+                let instructions: string | null = null;
+
                 if (result.matches.length > 0) {
                     summary = `Found ${result.matches.length} matches`;
                 } else if (result.indexStatus.isEmpty) {
-                    summary = "Vault has not been indexed yet. Please run 'refresh_semantic_index' tool to create the initial index. (Vaultがまだインデックスされていません。'refresh_semantic_index' ツールを実行して初期インデックスを作成してください)";
+                    instructions = "Vault has not been indexed yet. Please run 'refresh_semantic_index' tool to create the initial index. (Vaultがまだインデックスされていません。'refresh_semantic_index' ツールを実行して初期インデックスを作成してください)";
+                    summary = instructions;
                 } else if (result.indexStatus.ready) {
                     summary = "No semantic matches found";
                 } else {
@@ -34,6 +37,7 @@ export function registerSemanticSearchTool(server: McpServer, semanticService: S
 
                 return okResult(summary, {
                     ...result,
+                    instructions,
                     degraded: false,
                     degradedReason: null,
                 });

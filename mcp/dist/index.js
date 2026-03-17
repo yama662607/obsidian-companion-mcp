@@ -830,10 +830,12 @@ function registerSemanticSearchTool(server, semanticService) {
       try {
         const result = await semanticService.searchWithStatus(params.query, params.limit);
         let summary;
+        let instructions = null;
         if (result.matches.length > 0) {
           summary = `Found ${result.matches.length} matches`;
         } else if (result.indexStatus.isEmpty) {
-          summary = "Vault has not been indexed yet. Please run 'refresh_semantic_index' tool to create the initial index. (Vault\u304C\u307E\u3060\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002'refresh_semantic_index' \u30C4\u30FC\u30EB\u3092\u5B9F\u884C\u3057\u3066\u521D\u671F\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3092\u4F5C\u6210\u3057\u3066\u304F\u3060\u3055\u3044)";
+          instructions = "Vault has not been indexed yet. Please run 'refresh_semantic_index' tool to create the initial index. (Vault\u304C\u307E\u3060\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002'refresh_semantic_index' \u30C4\u30FC\u30EB\u3092\u5B9F\u884C\u3057\u3066\u521D\u671F\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3092\u4F5C\u6210\u3057\u3066\u304F\u3060\u3055\u3044)";
+          summary = instructions;
         } else if (result.indexStatus.ready) {
           summary = "No semantic matches found";
         } else {
@@ -841,6 +843,7 @@ function registerSemanticSearchTool(server, semanticService) {
         }
         return okResult(summary, {
           ...result,
+          instructions,
           degraded: false,
           degradedReason: null
         });
@@ -961,29 +964,27 @@ function registerEditorTools(server, editorService) {
 // src/schemas/notes.ts
 import { z as z4 } from "zod";
 var createNoteInputSchema = z4.object({
-  path: notePathSchema,
-  content: z4.string().default("").describe("Initial markdown content for the note")
+  path: z4.string().describe("Vault-relative path (e.g., 'notes/idea.md')"),
+  content: z4.string().describe("Full markdown content")
 });
 var getNoteInputSchema = z4.object({
-  path: notePathSchema
+  path: z4.string().describe("Vault-relative path")
 });
 var updateNoteContentInputSchema = z4.object({
-  path: notePathSchema,
-  content: z4.string().describe("Full markdown content to replace the note body")
+  path: z4.string().describe("Vault-relative path"),
+  content: z4.string().describe("New full content")
 });
 var deleteNoteInputSchema = z4.object({
-  path: notePathSchema.describe("Vault-relative markdown note path to delete")
+  path: z4.string().describe("Vault-relative path")
 });
 var updateNoteMetadataInputSchema = z4.object({
-  path: notePathSchema,
-  metadata: z4.record(z4.unknown()).describe("Frontmatter key/value patch to merge")
+  path: z4.string().describe("Vault-relative path"),
+  metadata: z4.record(z4.any()).describe("Key-value pairs for frontmatter")
 });
 
 // src/schemas/refresh.ts
-var refreshSemanticIndexInputSchema = {
-  type: "object",
-  properties: {}
-};
+import { z as z5 } from "zod";
+var refreshSemanticIndexInputSchema = z5.object({});
 
 // src/tools/noteManagement.ts
 function registerNoteTool(server, noteService) {
@@ -1321,7 +1322,7 @@ function registerReviewChecklistResource(server) {
 }
 
 // src/prompts/contextRewrite.ts
-import { z as z5 } from "zod";
+import { z as z6 } from "zod";
 function registerContextRewritePrompt(server) {
   server.registerPrompt(
     PROMPT_NAMES.CONTEXT_REWRITE,
@@ -1329,7 +1330,7 @@ function registerContextRewritePrompt(server) {
       title: "Context-aware Rewrite",
       description: "Rewrite currently selected text while preserving local context",
       argsSchema: {
-        style: z5.string().min(1).optional()
+        style: z6.string().min(1).optional()
       }
     },
     async (args) => {
@@ -1354,7 +1355,7 @@ function registerContextRewritePrompt(server) {
 }
 
 // src/prompts/searchThenInsert.ts
-import { z as z6 } from "zod";
+import { z as z7 } from "zod";
 function registerSearchThenInsertPrompt(server) {
   server.registerPrompt(
     PROMPT_NAMES.SEARCH_THEN_INSERT,
@@ -1362,7 +1363,7 @@ function registerSearchThenInsertPrompt(server) {
       title: "Search Then Insert",
       description: "Find relevant context semantically and insert a concise note at cursor",
       argsSchema: {
-        query: z6.string().min(1)
+        query: z7.string().min(1)
       }
     },
     async (args) => ({
@@ -1384,7 +1385,7 @@ function registerSearchThenInsertPrompt(server) {
 }
 
 // src/prompts/agentRuntimeReview.ts
-import { z as z7 } from "zod";
+import { z as z8 } from "zod";
 function registerAgentRuntimeReviewPrompt(server) {
   server.registerPrompt(
     PROMPT_NAMES.AGENT_RUNTIME_REVIEW,
@@ -1392,8 +1393,8 @@ function registerAgentRuntimeReviewPrompt(server) {
       title: "Agent Runtime Review",
       description: "Generate a focused runtime and MCP contract review request for an agent",
       argsSchema: {
-        scope: z7.string().min(1).describe("Review scope, file set, or capability area"),
-        severityThreshold: z7.enum(["high", "medium", "low"]).default("medium")
+        scope: z8.string().min(1).describe("Review scope, file set, or capability area"),
+        severityThreshold: z8.enum(["high", "medium", "low"]).default("medium")
       }
     },
     async (args) => ({
