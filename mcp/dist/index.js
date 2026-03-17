@@ -310,11 +310,12 @@ var IndexingQueue = class {
     const existingIndex = this.queue.findIndex((item) => item.path === job.path);
     if (existingIndex !== -1) {
       if (this.queue[existingIndex].updatedAt >= job.updatedAt) {
-        return;
+        return false;
       }
       this.queue.splice(existingIndex, 1);
     }
     this.queue.push(job);
+    return true;
   }
   async process(handler, maxItems = 25) {
     if (this.running) {
@@ -355,7 +356,7 @@ var SemanticService = class {
     this.provider = createEmbeddingProvider(preferRemote);
   }
   queueIndex(path4, snippet, updatedAt) {
-    this.queue.enqueue({ path: path4, content: snippet, updatedAt });
+    return this.queue.enqueue({ path: path4, content: snippet, updatedAt });
   }
   async flushIndex(maxItems = 25) {
     return this.queue.process(async (job) => {
@@ -369,7 +370,11 @@ var SemanticService = class {
     }, maxItems);
   }
   upsert(path4, snippet, updatedAt) {
-    this.queueIndex(path4, snippet, updatedAt);
+    const existing = this.notes.get(path4);
+    if (existing && existing.updatedAt >= updatedAt) {
+      return false;
+    }
+    return this.queueIndex(path4, snippet, updatedAt);
   }
   remove(path4) {
     this.notes.delete(path4);
@@ -569,6 +574,35 @@ function deleteNote(path4) {
   fs2.rmSync(filePath);
   return true;
 }
+function listNotes() {
+  const vaultRoot = getVaultRoot();
+  const results = [];
+  function scan(dir) {
+    const entries = fs2.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path2.join(dir, entry.name);
+      const relativePath = path2.relative(vaultRoot, fullPath);
+      if (entry.isDirectory()) {
+        if (entry.name.startsWith(".")) {
+          continue;
+        }
+        scan(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+        const stats = fs2.statSync(fullPath);
+        const content = fs2.readFileSync(fullPath, "utf8");
+        results.push({
+          path: relativePath,
+          updatedAt: stats.mtimeMs,
+          content
+        });
+      }
+    }
+  }
+  if (fs2.existsSync(vaultRoot)) {
+    scan(vaultRoot);
+  }
+  return results;
+}
 
 // src/domain/noteService.ts
 var NoteService = class {
@@ -649,6 +683,23 @@ var NoteService = class {
         degradedReason: "plugin_unavailable"
       };
     }
+  }
+  async refreshIndex() {
+    if (!this.semanticService) {
+      return { totalFound: 0, updatedCount: 0 };
+    }
+    const notes = listNotes();
+    let updatedCount = 0;
+    for (const note of notes) {
+      const wasUpdated = this.semanticService.upsert(note.path, note.content, note.updatedAt);
+      if (wasUpdated) {
+        updatedCount++;
+      }
+    }
+    return {
+      totalFound: notes.length,
+      updatedCount
+    };
   }
 };
 
@@ -738,6 +789,7 @@ function errorResult(error) {
 // src/constants/toolNames.ts
 var TOOL_NAMES = {
   SEARCH_NOTES_SEMANTIC: "search_notes_semantic",
+  REFRESH_SEMANTIC_INDEX: "refresh_semantic_index",
   GET_ACTIVE_CONTEXT: "get_active_context",
   INSERT_AT_CURSOR: "insert_at_cursor",
   REPLACE_RANGE: "replace_range",
@@ -749,6 +801,7 @@ var TOOL_NAMES = {
 };
 var TOOL_NAME_LIST = [
   TOOL_NAMES.SEARCH_NOTES_SEMANTIC,
+  TOOL_NAMES.REFRESH_SEMANTIC_INDEX,
   TOOL_NAMES.GET_ACTIVE_CONTEXT,
   TOOL_NAMES.INSERT_AT_CURSOR,
   TOOL_NAMES.REPLACE_RANGE,
@@ -776,7 +829,16 @@ function registerSemanticSearchTool(server, semanticService) {
     async (params) => {
       try {
         const result = await semanticService.searchWithStatus(params.query, params.limit);
-        const summary = result.matches.length > 0 ? `Found ${result.matches.length} matches` : result.indexStatus.ready ? result.indexStatus.isEmpty ? "Index is empty (no notes indexed)" : "No semantic matches found" : `Index not ready (${result.indexStatus.pendingCount} pending)`;
+        let summary;
+        if (result.matches.length > 0) {
+          summary = `Found ${result.matches.length} matches`;
+        } else if (result.indexStatus.isEmpty) {
+          summary = "Vault has not been indexed yet. Please run 'refresh_semantic_index' tool to create the initial index. (Vault\u304C\u307E\u3060\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002'refresh_semantic_index' \u30C4\u30FC\u30EB\u3092\u5B9F\u884C\u3057\u3066\u521D\u671F\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3092\u4F5C\u6210\u3057\u3066\u304F\u3060\u3055\u3044)";
+        } else if (result.indexStatus.ready) {
+          summary = "No semantic matches found";
+        } else {
+          summary = `Index not ready (${result.indexStatus.pendingCount} pending)`;
+        }
         return okResult(summary, {
           ...result,
           degraded: false,
@@ -917,8 +979,31 @@ var updateNoteMetadataInputSchema = z4.object({
   metadata: z4.record(z4.unknown()).describe("Frontmatter key/value patch to merge")
 });
 
+// src/schemas/refresh.ts
+var refreshSemanticIndexInputSchema = {
+  type: "object",
+  properties: {}
+};
+
 // src/tools/noteManagement.ts
 function registerNoteTool(server, noteService) {
+  server.registerTool(
+    TOOL_NAMES.REFRESH_SEMANTIC_INDEX,
+    {
+      description: "Scan all markdown files in the vault and update the semantic index. (Vault\u5185\u306E\u5168\u30D5\u30A1\u30A4\u30EB\u3092\u30B9\u30AD\u30E3\u30F3\u3057\u3001\u30BB\u30DE\u30F3\u30C6\u30A3\u30C3\u30AF\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3092\u66F4\u65B0\u3057\u307E\u3059)",
+      inputSchema: refreshSemanticIndexInputSchema
+    },
+    async () => {
+      try {
+        const stats = await noteService.refreshIndex();
+        const summary = `Scan complete. Found ${stats.totalFound} notes, queued ${stats.updatedCount} for indexing. (\u30B9\u30AD\u30E3\u30F3\u5B8C\u4E86\u3002${stats.totalFound}\u4EF6\u306E\u30CE\u30FC\u30C8\u3092\u691C\u51FA\u3057\u3001${stats.updatedCount}\u4EF6\u3092\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u5F85\u3061\u306B\u8FFD\u52A0\u3057\u307E\u3057\u305F)`;
+        return okResult(summary, stats);
+      } catch (error) {
+        const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "refresh index failed");
+        return errorResult(domainError);
+      }
+    }
+  );
   server.registerTool(
     TOOL_NAMES.CREATE_NOTE,
     {

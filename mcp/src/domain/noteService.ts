@@ -98,4 +98,25 @@ export class NoteService {
             };
         }
     }
+
+    async refreshIndex(): Promise<{ totalFound: number; updatedCount: number }> {
+        if (!this.semanticService) {
+            return { totalFound: 0, updatedCount: 0 };
+        }
+
+        const notes = fallback.listNotes();
+        let updatedCount = 0;
+
+        for (const note of notes) {
+            const wasUpdated = this.semanticService.upsert(note.path, note.content, note.updatedAt);
+            if (wasUpdated) {
+                updatedCount++;
+            }
+        }
+
+        return {
+            totalFound: notes.length,
+            updatedCount,
+        };
+    }
 }

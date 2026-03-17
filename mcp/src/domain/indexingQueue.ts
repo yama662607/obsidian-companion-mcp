@@ -16,16 +16,17 @@ export class IndexingQueue {
         return this.running;
     }
 
-    enqueue(job: IndexJob): void {
+    enqueue(job: IndexJob): boolean {
         const existingIndex = this.queue.findIndex((item) => item.path === job.path);
         if (existingIndex !== -1) {
             if (this.queue[existingIndex].updatedAt >= job.updatedAt) {
-                return;
+                return false;
             }
             this.queue.splice(existingIndex, 1);
         }
 
         this.queue.push(job);
+        return true;
     }
 
     async process(handler: (job: IndexJob) => Promise<void>, maxItems = 25): Promise<number> {

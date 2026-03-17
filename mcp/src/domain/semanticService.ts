@@ -31,8 +31,8 @@ export class SemanticService {
         this.provider = createEmbeddingProvider(preferRemote);
     }
 
-    queueIndex(path: string, snippet: string, updatedAt: number): void {
-        this.queue.enqueue({ path, content: snippet, updatedAt });
+    queueIndex(path: string, snippet: string, updatedAt: number): boolean {
+        return this.queue.enqueue({ path, content: snippet, updatedAt });
     }
 
     async flushIndex(maxItems = 25): Promise<number> {
@@ -48,8 +48,13 @@ export class SemanticService {
         }, maxItems);
     }
 
-    upsert(path: string, snippet: string, updatedAt: number): void {
-        this.queueIndex(path, snippet, updatedAt);
+    upsert(path: string, snippet: string, updatedAt: number): boolean {
+        const existing = this.notes.get(path);
+        if (existing && existing.updatedAt >= updatedAt) {
+            return false;
+        }
+
+        return this.queueIndex(path, snippet, updatedAt);
     }
 
     remove(path: string): void {

@@ -1,5 +1,6 @@
 export const TOOL_NAMES = {
     SEARCH_NOTES_SEMANTIC: "search_notes_semantic",
+    REFRESH_SEMANTIC_INDEX: "refresh_semantic_index",
     GET_ACTIVE_CONTEXT: "get_active_context",
     INSERT_AT_CURSOR: "insert_at_cursor",
     REPLACE_RANGE: "replace_range",
@@ -12,6 +13,7 @@ export const TOOL_NAMES = {
 
 export const TOOL_NAME_LIST = [
     TOOL_NAMES.SEARCH_NOTES_SEMANTIC,
+    TOOL_NAMES.REFRESH_SEMANTIC_INDEX,
     TOOL_NAMES.GET_ACTIVE_CONTEXT,
     TOOL_NAMES.INSERT_AT_CURSOR,
     TOOL_NAMES.REPLACE_RANGE,

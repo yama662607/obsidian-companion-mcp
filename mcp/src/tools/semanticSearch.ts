@@ -21,13 +21,16 @@ export function registerSemanticSearchTool(server: McpServer, semanticService: S
         async (params) => {
             try {
                 const result = await semanticService.searchWithStatus(params.query, params.limit);
-                const summary = result.matches.length > 0
-                    ? `Found ${result.matches.length} matches`
-                    : result.indexStatus.ready
-                        ? (result.indexStatus.isEmpty
-                            ? "Index is empty (no notes indexed)"
-                            : "No semantic matches found")
-                        : `Index not ready (${result.indexStatus.pendingCount} pending)`;
+                let summary: string;
+                if (result.matches.length > 0) {
+                    summary = `Found ${result.matches.length} matches`;
+                } else if (result.indexStatus.isEmpty) {
+                    summary = "Vault has not been indexed yet. Please run 'refresh_semantic_index' tool to create the initial index. (Vaultがまだインデックスされていません。'refresh_semantic_index' ツールを実行して初期インデックスを作成してください)";
+                } else if (result.indexStatus.ready) {
+                    summary = "No semantic matches found";
+                } else {
+                    summary = `Index not ready (${result.indexStatus.pendingCount} pending)`;
+                }
 
                 return okResult(summary, {
                     ...result,

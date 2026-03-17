@@ -189,3 +189,38 @@ export function deleteNote(path: string): boolean {
     fs.rmSync(filePath);
     return true;
 }
+
+export function listNotes(): { path: string; updatedAt: number; content: string }[] {
+    const vaultRoot = getVaultRoot();
+    const results: { path: string; updatedAt: number; content: string }[] = [];
+
+    function scan(dir: string): void {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            const relativePath = path.relative(vaultRoot, fullPath);
+
+            // Skip hidden directories (like .obsidian, .git)
+            if (entry.isDirectory()) {
+                if (entry.name.startsWith(".")) {
+                    continue;
+                }
+                scan(fullPath);
+            } else if (entry.isFile() && entry.name.endsWith(".md")) {
+                const stats = fs.statSync(fullPath);
+                const content = fs.readFileSync(fullPath, "utf8");
+                results.push({
+                    path: relativePath,
+                    updatedAt: stats.mtimeMs,
+                    content,
+                });
+            }
+        }
+    }
+
+    if (fs.existsSync(vaultRoot)) {
+        scan(vaultRoot);
+    }
+
+    return results;
+}
