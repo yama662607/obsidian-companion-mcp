@@ -1,7 +1,7 @@
 {
   "id": "obsidian-companion-mcp",
   "name": "Obsidian Companion MCP",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "minAppVersion": "1.5.0",
   "description": "Enables AI agents to use MCP tools for semantic vault search and editor actions via the companion MCP server.",
   "author": "Daisuke Yamashiki",

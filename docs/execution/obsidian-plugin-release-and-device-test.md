@@ -2,6 +2,11 @@
 
 このドキュメントは、公開前に必要なアセット準備と実機導入確認の最短手順をまとめたランブックです。
 
+Community Plugin の正式公開手順（GitHub Release作成、obsidian-releases申請、
+version整合ルール）は次を参照してください。
+
+- docs/execution/obsidian-community-plugin-publish-guide.md
+
 ## 1. 公開アセットの準備
 
 リポジトリルートで実行します。
