@@ -111,7 +111,7 @@ typecheck:
 execution-check:
     @echo "Running execution quality gates..."
     @cd {{ MCP_DIR }} && {{ pm }} run build
-    @node --test scripts/execution/validate-quality-gates.test.mjs scripts/implementation/*.test.mjs
+    @USE_REMOTE_EMBEDDING=true node --test scripts/execution/validate-quality-gates.test.mjs scripts/implementation/*.test.mjs
     @node scripts/execution/validate-quality-gates.mjs
 
 # =============================================================================

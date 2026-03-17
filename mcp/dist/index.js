@@ -243,12 +243,12 @@ var LocalEmbeddingProvider = class {
   kind = "local";
   extractor = null;
   modelName = "Xenova/multilingual-e5-small";
+  modelDir;
   constructor() {
     const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
     const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
-    let modelDir;
     if (vaultPath) {
-      modelDir = path.join(
+      this.modelDir = path.join(
         vaultPath,
         configDir,
         "plugins",
@@ -256,24 +256,47 @@ var LocalEmbeddingProvider = class {
         "models"
       );
     } else {
-      modelDir = path.join(os.homedir(), ".cache", "obsidian-companion-mcp", "models");
+      this.modelDir = path.join(os.homedir(), ".cache", "obsidian-companion-mcp", "models");
     }
-    if (!fs.existsSync(modelDir)) {
-      fs.mkdirSync(modelDir, { recursive: true });
+    if (!fs.existsSync(this.modelDir)) {
+      fs.mkdirSync(this.modelDir, { recursive: true });
     }
-    env.allowRemoteModels = true;
-    env.localModelPath = modelDir;
-    env.cacheDir = modelDir;
+    env.allowRemoteModels = false;
+    env.localModelPath = this.modelDir;
+    env.cacheDir = this.modelDir;
+  }
+  async isReady() {
+    const modelPath = path.join(this.modelDir, this.modelName);
+    try {
+      await fs.promises.access(modelPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  async prepare() {
+    if (this.extractor) return;
+    try {
+      env.allowRemoteModels = true;
+      this.extractor = await pipeline("feature-extraction", this.modelName);
+      env.allowRemoteModels = false;
+    } catch (error) {
+      env.allowRemoteModels = false;
+      throw error;
+    }
   }
   async getExtractor() {
     if (!this.extractor) {
-      this.extractor = await pipeline("feature-extraction", this.modelName);
+      try {
+        this.extractor = await pipeline("feature-extraction", this.modelName);
+      } catch (error) {
+        throw new Error(`Model not found locally. Please run 'refresh_semantic_index' to download models. (Details: ${String(error)})`);
+      }
     }
     return this.extractor;
   }
   /**
    * Generate embeddings using multilingual-e5-small.
-   * E5 models require "query: " or "passage: " prefix for optimal performance.
    */
   async embed(text, isQuery = false) {
     const extractor = await this.getExtractor();
@@ -287,10 +310,11 @@ var LocalEmbeddingProvider = class {
 };
 var RemoteEmbeddingProvider = class {
   kind = "remote";
-  /**
-   * Mock implementation for remote provider. 
-   * Removed 'async' if not using 'await', or use Promise.resolve.
-   */
+  async isReady() {
+    return true;
+  }
+  async prepare() {
+  }
   embed(text, _isQuery = false) {
     const normalized = text.trim().toLowerCase();
     const score = normalized.length + 1;
@@ -392,11 +416,20 @@ var SemanticService = class {
       indexedCount,
       running: this.queue.isRunning(),
       ready: pendingCount === 0,
-      isEmpty: indexedCount === 0
+      isEmpty: indexedCount === 0,
+      modelReady: !!this.provider.extractor || this.provider.kind === "remote"
     };
   }
+  async prepareModel() {
+    await this.provider.prepare();
+  }
+  async isModelReady() {
+    return this.provider.isReady();
+  }
   async searchWithStatus(query, limit) {
-    await this.flushIndex(Math.max(limit * 2, 10));
+    if (this.queue.getPendingCount() > 0) {
+      await this.flushIndex(Math.max(limit * 2, 10));
+    }
     const matches = await this.search(query, limit);
     return {
       matches,
@@ -689,10 +722,11 @@ var NoteService = class {
       };
     }
   }
-  refreshIndex() {
+  async refreshIndex() {
     if (!this.semanticService) {
-      return Promise.resolve({ totalFound: 0, updatedCount: 0 });
+      return { totalFound: 0, updatedCount: 0, modelReady: false };
     }
+    await this.semanticService.prepareModel();
     const notes = listNotes();
     let updatedCount = 0;
     for (const note of notes) {
@@ -701,10 +735,14 @@ var NoteService = class {
         updatedCount++;
       }
     }
-    return Promise.resolve({
+    if (updatedCount > 0) {
+      await this.semanticService.flushIndex(5);
+    }
+    return {
       totalFound: notes.length,
-      updatedCount
-    });
+      updatedCount,
+      modelReady: true
+    };
   }
 };
 
@@ -835,15 +873,18 @@ function registerSemanticSearchTool(server, semanticService) {
         const result = await semanticService.searchWithStatus(params.query, params.limit);
         let summary;
         let instructions = null;
-        if (result.matches.length > 0) {
-          summary = `Found ${result.matches.length} matches`;
-        } else if (result.indexStatus.isEmpty) {
-          instructions = "Vault has not been indexed yet. Please run 'refresh_semantic_index' tool to create the initial index.";
-          summary = instructions;
+        if (result.indexStatus.isEmpty) {
+          summary = "\u274C Vault has not been indexed yet. Semantic search is unavailable.";
+          instructions = "Please run the 'refresh_semantic_index' tool. Note: This may take several minutes for large vaults as it downloads models and generates embeddings.";
+        } else if (!result.indexStatus.modelReady) {
+          summary = "\u26A0\uFE0F Semantic model is not loaded. Generating first search result may take a moment.";
+          instructions = "The model will be loaded from disk on the first search. If you deleted the 'models' directory, you must run 'refresh_semantic_index' to re-download it.";
+        } else if (result.matches.length > 0) {
+          summary = `\u2705 Found ${result.matches.length} semantic matches`;
         } else if (result.indexStatus.ready) {
-          summary = "No semantic matches found";
+          summary = "\u2753 No semantic matches found for this query.";
         } else {
-          summary = `Index not ready (${result.indexStatus.pendingCount} pending)`;
+          summary = `\u23F3 Indexing in progress (${result.indexStatus.pendingCount} notes remaining). Results may be incomplete.`;
         }
         return okResult(summary, {
           ...result,
@@ -852,7 +893,17 @@ function registerSemanticSearchTool(server, semanticService) {
           degradedReason: null
         });
       } catch (error) {
-        const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "semantic search failed");
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes("Model not found locally")) {
+          return okResult("\u274C Semantic search unavailable: Model not found locally.", {
+            matches: [],
+            indexStatus: semanticService.getIndexStatus(),
+            instructions: "Please run 'refresh_semantic_index' to download the required models.",
+            degraded: true,
+            degradedReason: "model_missing"
+          });
+        }
+        const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", `semantic search failed: ${message}`);
         return errorResult(domainError);
       }
     }
@@ -979,7 +1030,7 @@ var updateNoteContentInputSchema = z4.object({
   content: z4.string().describe("New full content")
 });
 var deleteNoteInputSchema = z4.object({
-  path: z4.string().describe("Vault-relative path")
+  path: z4.string().describe("Vault-relative markdown note path to delete")
 });
 var updateNoteMetadataInputSchema = z4.object({
   path: z4.string().describe("Vault-relative path"),
@@ -990,13 +1041,20 @@ function registerNoteTool(server, noteService) {
   server.registerTool(
     TOOL_NAMES.REFRESH_SEMANTIC_INDEX,
     {
-      description: "Scan all markdown files in the vault and update the semantic index.",
+      description: "Build or rebuild the semantic index. This involves downloading models (if missing) and scanning all notes. This is a heavy operation for large vaults.",
       inputSchema: refreshSemanticIndexInputSchema
     },
     async (params) => {
       try {
         const stats = await noteService.refreshIndex();
-        const summary = `Scan complete. Found ${stats.totalFound} notes, queued ${stats.updatedCount} for indexing.`;
+        let summary = "\u2705 Semantic indexing initialized.";
+        if (!stats.modelReady) {
+          summary = "\u274C Failed to prepare the embedding model.";
+        } else if (stats.updatedCount > 0) {
+          summary += ` Models are ready. Scanning ${stats.totalFound} notes. Generating ${stats.updatedCount} embeddings in the background.`;
+        } else {
+          summary += ` Index is already up-to-date with ${stats.totalFound} notes.`;
+        }
         return okResult(summary, stats);
       } catch (error) {
         const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "refresh index failed");
@@ -1428,7 +1486,8 @@ function createServer() {
   });
   const pluginClient = new PluginClient();
   const editorService = new EditorService(pluginClient);
-  const semanticService = new SemanticService();
+  const useRemote = process.env.USE_REMOTE_EMBEDDING === "true";
+  const semanticService = new SemanticService(useRemote);
   const vectorStore = new VectorStore();
   const noteService = new NoteService(pluginClient, semanticService);
   registerSemanticSearchTool(server, semanticService);

@@ -35,7 +35,11 @@ export function createServer(): ServerRuntime {
 
     const pluginClient = new PluginClient();
     const editorService = new EditorService(pluginClient);
-    const semanticService = new SemanticService();
+    
+    // Use remote (mock) embedding provider if explicitly requested (e.g. for E2E tests)
+    const useRemote = process.env.USE_REMOTE_EMBEDDING === "true";
+    const semanticService = new SemanticService(useRemote);
+    
     const vectorStore = new VectorStore();
     const noteService = new NoteService(pluginClient, semanticService);
 

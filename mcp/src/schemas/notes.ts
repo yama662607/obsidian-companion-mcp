@@ -15,7 +15,7 @@ export const updateNoteContentInputSchema = z.object({
 });
 
 export const deleteNoteInputSchema = z.object({
-    path: z.string().describe("Vault-relative path"),
+    path: z.string().describe("Vault-relative markdown note path to delete"),
 });
 
 export const updateNoteMetadataInputSchema = z.object({

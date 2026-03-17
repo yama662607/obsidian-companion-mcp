@@ -21,7 +21,7 @@ const updateNoteContentInputSchema = z.object({
 });
 
 const deleteNoteInputSchema = z.object({
-    path: z.string().describe("Vault-relative path"),
+    path: z.string().describe("Vault-relative markdown note path to delete"),
 });
 
 const updateNoteMetadataInputSchema = z.object({
@@ -35,14 +35,21 @@ export function registerNoteTool(server: McpServer, noteService: NoteService): v
     server.registerTool(
         TOOL_NAMES.REFRESH_SEMANTIC_INDEX,
         {
-            description: "Scan all markdown files in the vault and update the semantic index.",
+            description: "Build or rebuild the semantic index. This involves downloading models (if missing) and scanning all notes. This is a heavy operation for large vaults.",
             inputSchema: refreshSemanticIndexInputSchema,
         },
         async (params) => {
             try {
                 // Ensure params is received, even if empty, to satisfy SDK validation
                 const stats = await noteService.refreshIndex();
-                const summary = `Scan complete. Found ${stats.totalFound} notes, queued ${stats.updatedCount} for indexing.`;
+                let summary = "✅ Semantic indexing initialized.";
+                if (!stats.modelReady) {
+                    summary = "❌ Failed to prepare the embedding model.";
+                } else if (stats.updatedCount > 0) {
+                    summary += ` Models are ready. Scanning ${stats.totalFound} notes. Generating ${stats.updatedCount} embeddings in the background.`;
+                } else {
+                    summary += ` Index is already up-to-date with ${stats.totalFound} notes.`;
+                }
                 return okResult(summary, stats);
             } catch (error) {
                 const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "refresh index failed");

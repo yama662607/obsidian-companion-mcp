@@ -5,6 +5,8 @@ import fs from "node:fs";
 
 export interface EmbeddingProvider {
     embed(text: string, isQuery?: boolean): Promise<number[]>;
+    prepare(): Promise<void>;
+    isReady(): Promise<boolean>;
     kind: "local" | "remote";
 }
 
@@ -12,16 +14,14 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
     public readonly kind = "local" as const;
     private extractor: FeatureExtractionPipeline | null = null;
     private modelName = "Xenova/multilingual-e5-small";
+    private modelDir: string;
 
     constructor() {
         const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
         const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
-        let modelDir: string;
 
         if (vaultPath) {
-            // Store models inside the Obsidian vault plugin data directory
-            // Use configDir (e.g. .obsidian) to be compatible with user settings
-            modelDir = path.join(
+            this.modelDir = path.join(
                 vaultPath,
                 configDir,
                 "plugins",
@@ -29,31 +29,60 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
                 "models"
             );
         } else {
-            // Fallback to user's home directory cache
-            modelDir = path.join(os.homedir(), ".cache", "obsidian-companion-mcp", "models");
+            this.modelDir = path.join(os.homedir(), ".cache", "obsidian-companion-mcp", "models");
         }
 
         // Ensure the directory exists
-        if (!fs.existsSync(modelDir)) {
-            fs.mkdirSync(modelDir, { recursive: true });
+        if (!fs.existsSync(this.modelDir)) {
+            fs.mkdirSync(this.modelDir, { recursive: true });
         }
 
-        env.allowRemoteModels = true;
-        env.localModelPath = modelDir;
-        // Use the cache directory as the base for all model loading
-        env.cacheDir = modelDir;
+        // Disable remote models by default to prevent unexpected downloads
+        env.allowRemoteModels = false;
+        env.localModelPath = this.modelDir;
+        env.cacheDir = this.modelDir;
+    }
+
+    async isReady(): Promise<boolean> {
+        // Check if the model files exist in the local directory
+        // Transformers.js models are typically in a subdirectory matching the name
+        const modelPath = path.join(this.modelDir, this.modelName);
+        try {
+            await fs.promises.access(modelPath);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    async prepare(): Promise<void> {
+        if (this.extractor) return;
+
+        try {
+            // Temporarily allow remote models during explicit preparation/download
+            env.allowRemoteModels = true;
+            this.extractor = (await pipeline("feature-extraction", this.modelName)) as FeatureExtractionPipeline;
+            env.allowRemoteModels = false;
+        } catch (error) {
+            env.allowRemoteModels = false;
+            throw error;
+        }
     }
 
     private async getExtractor(): Promise<FeatureExtractionPipeline> {
         if (!this.extractor) {
-            this.extractor = (await pipeline("feature-extraction", this.modelName)) as FeatureExtractionPipeline;
+            // Try to load from local only
+            try {
+                this.extractor = (await pipeline("feature-extraction", this.modelName)) as FeatureExtractionPipeline;
+            } catch (error) {
+                throw new Error(`Model not found locally. Please run 'refresh_semantic_index' to download models. (Details: ${String(error)})`);
+            }
         }
         return this.extractor;
     }
 
     /**
      * Generate embeddings using multilingual-e5-small.
-     * E5 models require "query: " or "passage: " prefix for optimal performance.
      */
     async embed(text: string, isQuery = false): Promise<number[]> {
         const extractor = await this.getExtractor();
@@ -63,7 +92,6 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
             normalize: true,
         });
 
-        // The output data is a Float32Array, convert it to a regular array
         return Array.from(output.data as unknown as number[]);
     }
 }
@@ -71,10 +99,14 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
 export class RemoteEmbeddingProvider implements EmbeddingProvider {
     public readonly kind = "remote" as const;
 
-    /**
-     * Mock implementation for remote provider. 
-     * Removed 'async' if not using 'await', or use Promise.resolve.
-     */
+    async isReady(): Promise<boolean> {
+        return true;
+    }
+
+    async prepare(): Promise<void> {
+        // No-op for remote
+    }
+
     embed(text: string, _isQuery = false): Promise<number[]> {
         const normalized = text.trim().toLowerCase();
         const score = normalized.length + 1;

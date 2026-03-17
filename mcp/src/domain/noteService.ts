@@ -99,11 +99,15 @@ export class NoteService {
         }
     }
 
-    refreshIndex(): Promise<{ totalFound: number; updatedCount: number }> {
+    async refreshIndex(): Promise<{ totalFound: number; updatedCount: number; modelReady: boolean }> {
         if (!this.semanticService) {
-            return Promise.resolve({ totalFound: 0, updatedCount: 0 });
+            return { totalFound: 0, updatedCount: 0, modelReady: false };
         }
 
+        // 1. Ensure model is ready (this might download models if missing)
+        await this.semanticService.prepareModel();
+
+        // 2. Queue all notes for indexing
         const notes = fallback.listNotes();
         let updatedCount = 0;
 
@@ -114,9 +118,15 @@ export class NoteService {
             }
         }
 
-        return Promise.resolve({
+        // 3. Process a small batch immediately to confirm it works
+        if (updatedCount > 0) {
+            await this.semanticService.flushIndex(5);
+        }
+
+        return {
             totalFound: notes.length,
             updatedCount,
-        });
+            modelReady: true,
+        };
     }
 }
