@@ -13,8 +13,8 @@ test("editor context scenario is implemented in plugin host", () => {
     const source = read("plugin/src/main.ts");
     assert.match(source, /editor\.getContext/);
     assert.match(source, /editor\.applyCommand/);
-    assert.match(source, /Invalid insert position/);
-    assert.match(source, /Invalid replace range/);
+    assert.match(source, /validateEditorPosition/);
+    assert.match(source, /validateEditorRange/);
 });
 
 test("editor tools expose degraded and no-active-editor signals", () => {
@@ -29,6 +29,28 @@ test("replace_range degraded mode does not overwrite local content", () => {
     const source = read("mcp/src/domain/editorService.ts");
     assert.match(source, /plugin_unavailable_range_replace_unsupported/);
     assert.doesNotMatch(source, /content:\s*`\$\{text\}`/);
+});
+
+test("editor position validation rejects out-of-bounds coordinates", () => {
+    const sharedSource = read("shared/editorPositions.ts");
+    const pluginSource = read("plugin/src/main.ts");
+    const serviceSource = read("mcp/src/domain/editorService.ts");
+
+    assert.match(sharedSource, /exceeds content line count/);
+    assert.match(sharedSource, /exceeds line length/);
+    assert.match(sharedSource, /Range start must not be after range end/);
+    assert.match(pluginSource, /validateEditorPosition/);
+    assert.match(pluginSource, /validateEditorRange/);
+    assert.match(serviceSource, /validateEditorPosition/);
+    assert.match(serviceSource, /validateEditorRange/);
+});
+
+test("plugin client preserves structured plugin errors", () => {
+    const source = read("mcp/src/infra/pluginClient.ts");
+
+    assert.match(source, /if \(error instanceof DomainError\) \{\s*throw error;\s*\}/);
+    assert.match(source, /this\.transition\("normal", null, null\);/);
+    assert.doesNotMatch(source, /throw new DomainError\("UNAVAILABLE", "Plugin communication failed"[\s\S]*throw new DomainError\(\s*json\.error\.code/);
 });
 
 test("semantic search returns deterministic structured shape", () => {

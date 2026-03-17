@@ -13,10 +13,16 @@ test("runtime wiring connects startup handshake, plugin-first editor, and semant
     const server = read("mcp/src/server.ts");
     const editorService = read("mcp/src/domain/editorService.ts");
     const noteService = read("mcp/src/domain/noteService.ts");
+    const protocol = read("shared/protocol.ts");
+    const plugin = read("plugin/src/main.ts");
 
     assert.match(server, /await pluginClient\.connect\(/);
     assert.match(server, /new EditorService\(pluginClient\)/);
     assert.match(server, /new NoteService\(pluginClient, semanticService\)/);
+    assert.match(server, /Missing required vault path/);
+    assert.match(server, /handshake\?\.vaultPath/);
+    assert.match(protocol, /vaultPath\?: string/);
+    assert.match(plugin, /getVaultBasePath\(\)/);
 
     assert.match(editorService, /pluginClient\.send<.*>\("editor\.getContext"\)/s);
     assert.match(editorService, /editor\.applyCommand/);

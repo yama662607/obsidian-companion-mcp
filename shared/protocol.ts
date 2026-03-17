@@ -40,6 +40,7 @@ export interface HandshakeResult {
     capabilities: string[];
     availability: "normal" | "degraded" | "unavailable";
     configDir?: string;
+    vaultPath?: string;
 }
 
 export function isJsonRpcFailure(input: JsonRpcResponse<unknown>): input is JsonRpcFailure {

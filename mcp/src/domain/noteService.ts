@@ -63,16 +63,17 @@ export class NoteService {
             this.semanticService?.remove(path);
             return { deleted: true, degraded: false, degradedReason: null };
         } catch (error) {
+            const deleted = fallback.deleteNote(path);
+            if (deleted) {
+                this.semanticService?.remove(path);
+                return { deleted: true, degraded: true, degradedReason: "plugin_unavailable" };
+            }
+
             if (error instanceof DomainError && error.code === "NOT_FOUND") {
                 throw error;
             }
 
-            const deleted = fallback.deleteNote(path);
-            if (!deleted) {
-                throw new DomainError("NOT_FOUND", `Note not found: ${path}`);
-            }
-            this.semanticService?.remove(path);
-            return { deleted: true, degraded: true, degradedReason: "plugin_unavailable" };
+            throw new DomainError("NOT_FOUND", `Note not found: ${path}`);
         }
     }
 

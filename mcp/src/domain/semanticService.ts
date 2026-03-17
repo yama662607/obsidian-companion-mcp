@@ -27,8 +27,8 @@ export class SemanticService {
     private queue = new IndexingQueue();
     private provider: EmbeddingProvider;
 
-    constructor(preferRemote = false) {
-        this.provider = createEmbeddingProvider(preferRemote);
+    constructor(preferRemote = false, vaultPath = "", configDir = "") {
+        this.provider = createEmbeddingProvider(preferRemote, vaultPath, configDir);
     }
 
     queueIndex(path: string, snippet: string, updatedAt: number): boolean {

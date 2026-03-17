@@ -19,6 +19,7 @@ import { registerSearchThenInsertPrompt } from "./prompts/searchThenInsert";
 import { registerAgentRuntimeReviewPrompt } from "./prompts/agentRuntimeReview";
 import { logError, logInfo } from "./infra/logger";
 import { DomainError } from "./domain/errors";
+import type { HandshakeResult } from "./contracts/protocol";
 
 export interface ServerRuntime {
     server: McpServer;
@@ -27,30 +28,21 @@ export interface ServerRuntime {
     vectorStore: VectorStore;
 }
 
-export function createServer(): ServerRuntime {
-    const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-    const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
-
-    if (!vaultPath) {
-        throw new DomainError(
-            "VALIDATION",
-            "Missing required environment variable: OBSIDIAN_VAULT_PATH must be set."
-        );
-    }
-
+export function createServer(
+    runtimePaths: { vaultPath: string; configDir: string },
+    pluginClient = new PluginClient(),
+): ServerRuntime {
     const server = new McpServer({
         name: "obsidian-companion-mcp",
         version: "0.1.0",
     });
 
-    const pluginClient = new PluginClient();
-    const editorService = new EditorService(pluginClient);
-    
     // Use remote (mock) embedding provider if explicitly requested (e.g. for E2E tests)
     const useRemote = process.env.USE_REMOTE_EMBEDDING === "true";
-    const semanticService = new SemanticService(useRemote);
-    
-    const vectorStore = new VectorStore();
+
+    const semanticService = new SemanticService(useRemote, runtimePaths.vaultPath, runtimePaths.configDir);
+    const vectorStore = new VectorStore(runtimePaths.vaultPath, runtimePaths.configDir);
+    const editorService = new EditorService(pluginClient);
     const noteService = new NoteService(pluginClient, semanticService);
 
     // Registration only: all behavior remains in tools/resources/prompts/domain layers.
@@ -72,8 +64,52 @@ export function createServer(): ServerRuntime {
     return { server, pluginClient, semanticService, vectorStore };
 }
 
+async function resolveRuntimePaths(pluginClient: PluginClient): Promise<{
+    vaultPath: string;
+    configDir: string;
+    handshake: HandshakeResult | null;
+}> {
+    const envVaultPath = process.env.OBSIDIAN_VAULT_PATH?.trim();
+    const envConfigDir = process.env.OBSIDIAN_CONFIG_DIR?.trim();
+    let handshake: HandshakeResult | null = null;
+
+    try {
+        handshake = await pluginClient.connect();
+        logInfo("startup handshake completed");
+    } catch (error) {
+        const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "startup handshake failed");
+        logError(
+            `startup handshake failed code=${domainError.code} correlationId=${domainError.correlationId} reason=${pluginClient.getRuntimeStatus().degradedReason ?? "n/a"}`,
+        );
+    }
+
+    const vaultPath = envVaultPath ?? handshake?.vaultPath;
+    if (!vaultPath) {
+        throw new DomainError(
+            "VALIDATION",
+            "Missing required vault path. Set OBSIDIAN_VAULT_PATH or start the Obsidian Companion plugin so the vault can be discovered automatically.",
+        );
+    }
+
+    const configDir = envConfigDir ?? handshake?.configDir ?? ".obsidian";
+
+    if (!process.env.OBSIDIAN_VAULT_PATH) {
+        process.env.OBSIDIAN_VAULT_PATH = vaultPath;
+        logInfo(`applying dynamic configuration: vaultPath=${vaultPath}`);
+    }
+
+    if (!process.env.OBSIDIAN_CONFIG_DIR) {
+        process.env.OBSIDIAN_CONFIG_DIR = configDir;
+        logInfo(`applying dynamic configuration: configDir=${configDir}`);
+    }
+
+    return { vaultPath, configDir, handshake };
+}
+
 export async function runServer(): Promise<void> {
-    const { server, pluginClient, semanticService, vectorStore } = createServer();
+    const pluginClient = new PluginClient();
+    const runtimePaths = await resolveRuntimePaths(pluginClient);
+    const { server, semanticService, vectorStore } = createServer(runtimePaths, pluginClient);
 
     // Load existing index from storage
     const existingNotes = await vectorStore.load();
@@ -94,32 +130,6 @@ export async function runServer(): Promise<void> {
     const saveInterval = setInterval(async () => {
         await vectorStore.save(semanticService.getNotes());
     }, 5 * 60 * 1000);
-
-    try {
-        const handshake = await pluginClient.connect();
-        logInfo("startup handshake completed");
-
-        // Dynamic auto-configuration if plugin reported a custom config directory
-        if (handshake.configDir && process.env.OBSIDIAN_VAULT_PATH) {
-            const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-            logInfo(`applying dynamic configuration: configDir=${handshake.configDir}`);
-            
-            vectorStore.updateIndexPath(vaultPath, handshake.configDir);
-            
-            if (semanticService.getProvider().kind === "local") {
-                (semanticService.getProvider() as any).updateModelPath(vaultPath, handshake.configDir);
-            }
-            
-            // Reload index from the new path
-            const updatedNotes = await vectorStore.load();
-            semanticService.setNotes(updatedNotes);
-        }
-    } catch (error) {
-        const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "startup handshake failed");
-        logError(
-            `startup handshake failed code=${domainError.code} correlationId=${domainError.correlationId} reason=${pluginClient.getRuntimeStatus().degradedReason ?? "n/a"}`,
-        );
-    }
 
     const transport = new StdioServerTransport();
     await server.connect(transport);

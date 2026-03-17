@@ -1,11 +1,14 @@
-import { Plugin, MarkdownView, type EditorPosition, PluginSettingTab, Setting, App, Notice } from "obsidian";
-const http = require("http");
+import { Plugin, MarkdownView, TFile, FileSystemAdapter, type EditorPosition, PluginSettingTab, Setting, App, Notice } from "obsidian";
+import * as http from "http";
+import { IncomingMessage, ServerResponse } from "http";
 import {
     PROTOCOL_VERSION,
     type JsonRpcRequest,
     type JsonRpcResponse,
+    type JsonRpcId,
     type HandshakeResult,
 } from "../../shared/protocol";
+import { validateEditorPosition, validateEditorRange } from "../../shared/editorPositions";
 
 interface CompanionSettings {
     port: number;
@@ -14,6 +17,9 @@ interface CompanionSettings {
 const DEFAULT_SETTINGS: CompanionSettings = {
     port: 3033
 };
+
+const MIN_PORT = 1024;
+const MAX_PORT = 49151;
 
 interface InsertTextParams {
     command: "insertText";
@@ -29,92 +35,228 @@ interface ReplaceRangeParams {
 
 type EditorCommandParams = InsertTextParams | ReplaceRangeParams;
 
+interface NotesWriteParams {
+    path: string;
+    content: string;
+}
+
+interface NotesReadParams {
+    path: string;
+}
+
+interface NotesDeleteParams {
+    path: string;
+}
+
+interface MetadataUpdateParams {
+    path: string;
+    metadata: Record<string, unknown>;
+}
+
 class LocalJsonRpcHost {
     constructor(private plugin: ObsidianCompanionPlugin) {}
 
-    handle(request: JsonRpcRequest<unknown>): JsonRpcResponse<unknown> {
+    async handle(request: JsonRpcRequest<unknown>): Promise<JsonRpcResponse<unknown>> {
         const { method, id } = request;
 
-        if (method === "health.ping") {
-            const result: HandshakeResult = {
-                capabilities: ["health.ping", "editor.getContext", "editor.applyCommand", "notes.read"],
-                availability: "normal",
-                configDir: this.plugin.app.vault.configDir,
-            };
-            return { jsonrpc: "2.0", id, protocolVersion: PROTOCOL_VERSION, result };
+        try {
+            switch (method) {
+                case "health.ping":
+                    return this.handleHealthPing(id);
+                case "editor.getContext":
+                    return this.handleGetEditorContext(id);
+                case "notes.write":
+                    return this.handleNotesWrite(id, request.params as NotesWriteParams);
+                case "notes.read":
+                    return this.handleNotesRead(id, request.params as NotesReadParams);
+                case "notes.delete":
+                    return this.handleNotesDelete(id, request.params as NotesDeleteParams);
+                case "metadata.update":
+                    return this.handleMetadataUpdate(id, request.params as MetadataUpdateParams);
+                case "editor.applyCommand":
+                    return this.handleEditorApplyCommand(id, request.params as EditorCommandParams);
+                default:
+                    return this.methodNotFound(id, method);
+            }
+        } catch (error) {
+            return this.handleError(id, error);
+        }
+    }
+
+    private handleHealthPing(id: JsonRpcId): JsonRpcResponse<HandshakeResult> {
+        const result: HandshakeResult = {
+            capabilities: [
+                "health.ping",
+                "editor.getContext",
+                "editor.applyCommand",
+                "notes.read",
+                "notes.write",
+                "notes.delete",
+                "metadata.update"
+            ],
+            availability: "normal",
+            configDir: this.plugin.app.vault.configDir,
+            vaultPath: this.plugin.getVaultBasePath(),
+        };
+        return { jsonrpc: "2.0", id, protocolVersion: PROTOCOL_VERSION, result };
+    }
+
+    private handleGetEditorContext(id: JsonRpcId): JsonRpcResponse<unknown> {
+        const activeView = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+        return {
+            jsonrpc: "2.0",
+            id,
+            protocolVersion: PROTOCOL_VERSION,
+            result: {
+                activeFile: activeView?.file?.path ?? null,
+                cursor: activeView?.editor ? activeView.editor.getCursor() : null,
+                selection: activeView?.editor ? activeView.editor.getSelection() : "",
+                content: activeView?.editor ? activeView.editor.getValue() : "",
+            }
+        };
+    }
+
+    private async handleNotesWrite(id: JsonRpcId, params: NotesWriteParams): Promise<JsonRpcResponse<unknown>> {
+        if (!params?.path) {
+            return this.validationError(id, "Path is required");
+        }
+        if (params.content === undefined) {
+            return this.validationError(id, "Content is required");
         }
 
-        if (method === "editor.getContext") {
-            const activeView = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
-            return {
-                jsonrpc: "2.0",
-                id,
-                protocolVersion: PROTOCOL_VERSION,
-                result: {
-                    activeFile: activeView?.file?.path ?? null,
-                    cursor: activeView?.editor ? activeView.editor.getCursor() : null,
-                    selection: activeView?.editor ? activeView.editor.getSelection() : "",
-                    content: activeView?.editor ? activeView.editor.getValue() : "",
-                }
-            };
+        const file = this.plugin.app.vault.getAbstractFileByPath(params.path);
+        if (file) {
+            if (!(file instanceof TFile)) {
+                return this.errorResponse(id, "INTERNAL", "Target is not a file");
+            }
+            await this.plugin.app.vault.modify(file, params.content);
+        } else {
+            await this.plugin.app.vault.create(params.path, params.content);
         }
 
-        if (method === "editor.applyCommand") {
-            const activeView = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
-            if (!activeView?.editor) {
-                return {
-                    jsonrpc: "2.0",
-                    id,
-                    error: {
-                        code: "UNAVAILABLE",
-                        message: "No active editor found",
-                        data: { correlationId: `corr-${Date.now()}` }
-                    }
-                };
+        return {
+            jsonrpc: "2.0",
+            id,
+            protocolVersion: PROTOCOL_VERSION,
+            result: { success: true }
+        };
+    }
+
+    private async handleNotesRead(id: JsonRpcId, params: NotesReadParams): Promise<JsonRpcResponse<unknown>> {
+        if (!params?.path) {
+            return this.validationError(id, "Path is required");
+        }
+
+        const file = this.plugin.app.vault.getAbstractFileByPath(params.path);
+        if (!file || !(file instanceof TFile)) {
+            return this.errorResponse(id, "NOT_FOUND", `Note not found: ${params.path}`);
+        }
+
+        // Use cachedRead for better performance
+        const content = await this.plugin.app.vault.cachedRead(file);
+        return {
+            jsonrpc: "2.0",
+            id,
+            protocolVersion: PROTOCOL_VERSION,
+            result: { content }
+        };
+    }
+
+    private async handleNotesDelete(id: JsonRpcId, params: NotesDeleteParams): Promise<JsonRpcResponse<unknown>> {
+        if (!params?.path) {
+            return this.validationError(id, "Path is required");
+        }
+
+        const file = this.plugin.app.vault.getAbstractFileByPath(params.path);
+        if (!file) {
+            return this.errorResponse(id, "NOT_FOUND", `Note not found: ${params.path}`);
+        }
+
+        await this.plugin.app.vault.delete(file);
+        return {
+            jsonrpc: "2.0",
+            id,
+            protocolVersion: PROTOCOL_VERSION,
+            result: { success: true }
+        };
+    }
+
+    private async handleMetadataUpdate(id: JsonRpcId, params: MetadataUpdateParams): Promise<JsonRpcResponse<unknown>> {
+        if (!params?.path) {
+            return this.validationError(id, "Path is required");
+        }
+        if (!params?.metadata || typeof params.metadata !== "object") {
+            return this.validationError(id, "Valid metadata object is required");
+        }
+
+        const file = this.plugin.app.vault.getAbstractFileByPath(params.path);
+        if (!file || !(file instanceof TFile)) {
+            return this.errorResponse(id, "NOT_FOUND", `Note not found: ${params.path}`);
+        }
+
+        // Use cachedRead for better performance
+        const content = await this.plugin.app.vault.cachedRead(file);
+        const newContent = this.updateFrontmatter(content, params.metadata);
+        await this.plugin.app.vault.modify(file, newContent);
+
+        return {
+            jsonrpc: "2.0",
+            id,
+            protocolVersion: PROTOCOL_VERSION,
+            result: { success: true }
+        };
+    }
+
+    private handleEditorApplyCommand(id: JsonRpcId, payload: EditorCommandParams): JsonRpcResponse<unknown> {
+        const activeView = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!activeView?.editor) {
+            return this.errorResponse(id, "UNAVAILABLE", "No active editor found");
+        }
+
+        const content = activeView.editor.getValue();
+
+        if (payload.command === "insertText") {
+            const validationError = validateEditorPosition(content, payload.pos, "Insert position");
+            if (validationError) {
+                return this.validationError(id, validationError);
+            }
+            activeView.editor.setCursor(payload.pos);
+            activeView.editor.replaceSelection(payload.text);
+        } else if (payload.command === "replaceRange") {
+            const validationError = validateEditorRange(content, payload.range);
+            if (validationError) {
+                return this.validationError(id, validationError);
             }
 
-            const payload = request.params as EditorCommandParams;
-            if (payload.command === "insertText") {
-                if (payload.pos.line < 0 || payload.pos.ch < 0) {
-                    return {
-                        jsonrpc: "2.0",
-                        id,
-                        error: {
-                            code: "VALIDATION",
-                            message: "Invalid insert position",
-                            data: { correlationId: `corr-${Date.now()}` }
-                        }
-                    };
-                }
-                activeView.editor.replaceSelection(payload.text);
-            } else if (payload.command === "replaceRange") {
-                const invalid =
-                    payload.range.from.line < 0 ||
-                    payload.range.from.ch < 0 ||
-                    payload.range.to.line < 0 ||
-                    payload.range.to.ch < 0;
-                if (invalid) {
-                    return {
-                        jsonrpc: "2.0",
-                        id,
-                        error: {
-                            code: "VALIDATION",
-                            message: "Invalid replace range",
-                            data: { correlationId: `corr-${Date.now()}` }
-                        }
-                    };
-                }
-                activeView.editor.replaceRange(payload.text, payload.range.from, payload.range.to);
-            }
+            // Debug logging
+            const lines = content.split("\n");
+            console.log("[replaceRange DEBUG]", {
+                from: payload.range.from,
+                to: payload.range.to,
+                text: payload.text,
+                "from.line content": lines[payload.range.from.line] || "(undefined)",
+                "to.line content": lines[payload.range.to.line] || "(undefined)",
+                "from.line length": lines[payload.range.from.line]?.length || 0,
+                "to.line length": lines[payload.range.to.line]?.length || 0,
+            });
 
-            return {
-                jsonrpc: "2.0",
-                id,
-                protocolVersion: PROTOCOL_VERSION,
-                result: { success: true }
-            };
+            activeView.editor.replaceRange(payload.text, payload.range.from, payload.range.to);
         }
 
+        return {
+            jsonrpc: "2.0",
+            id,
+            protocolVersion: PROTOCOL_VERSION,
+            result: {
+                activeFile: activeView?.file?.path ?? null,
+                cursor: activeView.editor.getCursor(),
+                selection: activeView.editor.getSelection(),
+                content: activeView.editor.getValue(),
+            }
+        };
+    }
+
+    private methodNotFound(id: JsonRpcId, method: string): JsonRpcResponse<unknown> {
         return {
             jsonrpc: "2.0",
             id,
@@ -125,122 +267,253 @@ class LocalJsonRpcHost {
             }
         };
     }
+
+    private validationError(id: JsonRpcId, message: string): JsonRpcResponse<unknown> {
+        return {
+            jsonrpc: "2.0",
+            id,
+            error: {
+                code: "VALIDATION",
+                message,
+                data: { correlationId: `corr-${Date.now()}` }
+            }
+        };
+    }
+
+    private errorResponse(id: JsonRpcId, code: string, message: string): JsonRpcResponse<unknown> {
+        return {
+            jsonrpc: "2.0",
+            id,
+            error: {
+                code,
+                message,
+                data: { correlationId: `corr-${Date.now()}` }
+            }
+        };
+    }
+
+    private handleError(id: JsonRpcId, error: unknown): JsonRpcResponse<unknown> {
+        const message = error instanceof Error ? error.message : "Unknown error occurred";
+        return this.errorResponse(id, "INTERNAL", message);
+    }
+
+    /**
+     * Update frontmatter in content. Preserves existing frontmatter structure.
+     */
+    private updateFrontmatter(content: string, metadata: Record<string, unknown>): string {
+        const frontmatterRegex = /^---\n([\s\S]*?)\n---\n\n?/;
+        const match = content.match(frontmatterRegex);
+
+        const metadataStr = Object.entries(metadata)
+            .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
+            .join("\n");
+
+        if (match) {
+            // Replace existing frontmatter
+            return content.replace(frontmatterRegex, `---\n${metadataStr}\n---\n\n`);
+        } else {
+            // Add new frontmatter
+            return `---\n${metadataStr}\n---\n\n${content}`;
+        }
+    }
 }
 
 export default class ObsidianCompanionPlugin extends Plugin {
     settings: CompanionSettings = DEFAULT_SETTINGS;
     private host: LocalJsonRpcHost | null = null;
     private server: http.Server | null = null;
+    private statusBarElement: HTMLElement | null = null;
 
     async onload(): Promise<void> {
-        new Notice("Companion MCP: Plugin loading...");
+        console.log("Companion MCP: Plugin loading...");
+
         await this.loadSettings();
+
+        // Validate settings
+        if (!this.isValidPort(this.settings.port)) {
+            new Notice("Companion MCP: Invalid port in settings, using default");
+            this.settings.port = DEFAULT_SETTINGS.port;
+            await this.saveSettings();
+        }
+
         this.host = new LocalJsonRpcHost(this);
         this.addSettingTab(new CompanionSettingTab(this.app, this));
-        
-        this.startServer();
 
-        this.addStatusBarItem().setText(`Companion MCP: Port ${this.settings.port}`);
-        console.log(`Obsidian Companion MCP Plugin loaded on port ${this.settings.port}`);
+        // Add status bar item with reference for cleanup
+        this.statusBarElement = this.addStatusBarItem();
+        this.updateStatusBar();
+
+        // Start server after workspace is ready to improve load time
+        this.app.workspace.onLayoutReady(() => {
+            this.startServer();
+        });
+
+        console.log(`Companion MCP: Plugin loaded, will start server on port ${this.settings.port}`);
     }
 
     onunload(): void {
         this.stopServer();
-        console.log("Obsidian Companion MCP Plugin unloaded");
+
+        // Clean up status bar
+        if (this.statusBarElement) {
+            this.statusBarElement.remove();
+            this.statusBarElement = null;
+        }
+
+        console.log("Companion MCP: Plugin unloaded");
     }
 
     async loadSettings(): Promise<void> {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        const savedSettings = await this.loadData();
+        this.settings = { ...DEFAULT_SETTINGS, ...savedSettings };
     }
 
     async saveSettings(): Promise<void> {
+        // Validate before saving
+        if (!this.isValidPort(this.settings.port)) {
+            new Notice("Companion MCP: Invalid port number");
+            return;
+        }
+
         await this.saveData(this.settings);
-        this.restartServer();
+
+        // Only restart server if already running (after initial load)
+        if (this.server) {
+            this.restartServer();
+        }
+    }
+
+    public getServerStatus(): boolean {
+        return this.server !== null;
+    }
+
+    public updateStatusBar(): void {
+        if (this.statusBarElement) {
+            this.statusBarElement.setText(`Companion MCP: ${this.settings.port}`);
+        }
+    }
+
+    public getVaultBasePath(): string | undefined {
+        const adapter = this.app.vault.adapter;
+        if (adapter instanceof FileSystemAdapter) {
+            return adapter.getBasePath();
+        }
+        return undefined;
     }
 
     private startServer(): void {
+        if (!this.settings.port || !this.isValidPort(this.settings.port)) {
+            new Notice("Companion MCP: Invalid port, cannot start server");
+            return;
+        }
+
         try {
             if (this.server) {
                 this.server.close();
+                this.server = null;
             }
 
-            this.server = http.createServer((req: any, res: any) => {
-                // Set CORS headers
-                res.setHeader("Access-Control-Allow-Origin", "*");
-                res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-                res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-                // Handle preflight OPTIONS request
-                if (req.method === "OPTIONS") {
-                    res.writeHead(204);
-                    res.end();
-                    return;
-                }
-
-                // Security: Only allow localhost
-                const remoteAddress = req.socket.remoteAddress || "";
-                const hostHeader = req.headers.host || "";
-                const isLocal = 
-                    remoteAddress.includes("127.0.0.1") || 
-                    remoteAddress.includes("::1") || 
-                    remoteAddress.includes("localhost") ||
-                    hostHeader.includes("127.0.0.1") ||
-                    hostHeader.includes("localhost");
-
-                if (!isLocal) {
-                    console.warn(`Companion MCP: Rejected connection from ${remoteAddress}`);
-                    res.writeHead(403);
-                    res.end("Forbidden: Localhost only");
-                    return;
-                }
-
-                if (req.method === "POST") {
-                    let body = "";
-                    req.on("data", (chunk: any) => { body += chunk; });
-                    req.on("end", () => {
-                        try {
-                            const request = JSON.parse(body) as JsonRpcRequest<unknown>;
-                            const response = this.host?.handle(request);
-                            res.writeHead(200, { "Content-Type": "application/json" });
-                            res.end(JSON.stringify(response));
-                        } catch (e) {
-                            res.writeHead(400);
-                            res.end("Invalid JSON-RPC request");
-                        }
-                    });
-                } else {
-                    res.writeHead(405);
-                    res.end("Method Not Allowed");
-                }
+            this.server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
+                this.handleRequest(req, res);
             });
 
-            this.server.on("error", (e: any) => {
-                console.error("Companion MCP server error:", e);
-                new Notice(`Companion MCP error: ${e.message}`);
+            this.server.on("error", (error: Error) => {
+                this.handleServerError(error);
             });
 
-            // Listen on 0.0.0.0 to increase compatibility, but rely on remoteAddress check for security
             this.server.listen(this.settings.port, "127.0.0.1", () => {
-                const msg = `Companion MCP server active on port ${this.settings.port}`;
+                const msg = `Companion MCP: Server active on port ${this.settings.port}`;
                 console.log(msg);
                 new Notice(msg);
             });
-        } catch (err) {
-            console.error("Fatal error starting Companion MCP server:", err);
-            new Notice(`Companion MCP failed: ${err.message}`);
+        } catch (error) {
+            this.handleServerError(error);
         }
+    }
+
+    private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+        // Set CORS headers
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+        // Handle preflight OPTIONS request
+        if (req.method === "OPTIONS") {
+            res.writeHead(204);
+            res.end();
+            return;
+        }
+
+        // Security: Only allow localhost
+        if (!this.isLocalRequest(req)) {
+            const remoteAddress = req.socket.remoteAddress || "unknown";
+            console.warn(`Companion MCP: Rejected connection from ${remoteAddress}`);
+            res.writeHead(403);
+            res.end("Forbidden: Localhost only");
+            return;
+        }
+
+        if (req.method === "POST") {
+            let body = "";
+
+            try {
+                for await (const chunk of req) {
+                    body += chunk.toString();
+                }
+
+                const request = JSON.parse(body) as JsonRpcRequest<unknown>;
+                const response = await this.host?.handle(request);
+
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify(response));
+            } catch (error) {
+                console.error("Companion MCP: Request handling error:", error);
+                res.writeHead(400);
+                res.end("Invalid JSON-RPC request");
+            }
+        } else {
+            res.writeHead(405);
+            res.end("Method Not Allowed");
+        }
+    }
+
+    private handleServerError(error: unknown): void {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("Companion MCP: Server error:", error);
+        new Notice(`Companion MCP error: ${message}`);
     }
 
     private stopServer(): void {
         if (this.server) {
-            this.server.close();
+            this.server.close(() => {
+                console.log("Companion MCP: Server stopped");
+            });
             this.server = null;
         }
     }
 
-    private restartServer(): void {
+    public restartServer(): void {
         this.stopServer();
-        this.startServer();
+
+        // Wait for server to fully stop before restarting
+        setTimeout(() => {
+            this.startServer();
+        }, 100);
+    }
+
+    private isValidPort(port: number): boolean {
+        return Number.isInteger(port) && port >= MIN_PORT && port <= MAX_PORT;
+    }
+
+    private isLocalRequest(req: IncomingMessage): boolean {
+        const remoteAddress = req.socket.remoteAddress || "";
+        const hostHeader = req.headers.host || "";
+
+        return remoteAddress.includes("127.0.0.1") ||
+               remoteAddress.includes("::1") ||
+               remoteAddress.includes("localhost") ||
+               hostHeader.includes("127.0.0.1") ||
+               hostHeader.includes("localhost");
     }
 }
 
@@ -255,20 +528,37 @@ class CompanionSettingTab extends PluginSettingTab {
     display(): void {
         const { containerEl } = this;
         containerEl.empty();
+
         containerEl.createEl("h2", { text: "Companion MCP Settings" });
 
         new Setting(containerEl)
-            .setName("Port")
-            .setDesc("The port the local JSON-RPC server will listen on. (Default: 3031)")
+            .setName("Server port")
+            .setDesc(`The port for the local JSON-RPC server. Must be between ${MIN_PORT} and ${MAX_PORT}. Default: ${DEFAULT_SETTINGS.port}`)
             .addText(text => text
-                .setPlaceholder("3031")
+                .setPlaceholder(DEFAULT_SETTINGS.port.toString())
                 .setValue(this.plugin.settings.port.toString())
                 .onChange(async (value) => {
                     const port = parseInt(value);
-                    if (!isNaN(port)) {
+                    if (!isNaN(port) && port >= MIN_PORT && port <= MAX_PORT) {
                         this.plugin.settings.port = port;
                         await this.plugin.saveSettings();
+                        this.plugin.updateStatusBar();
                     }
                 }));
+
+        const isServerRunning = this.plugin.getServerStatus();
+        new Setting(containerEl)
+            .setName("Server status")
+            .setDesc(isServerRunning ? "Server is running" : "Server is stopped")
+            .addButton(button => button
+                .setButtonText("Restart server")
+                .onClick(() => {
+                    this.plugin.restartServer();
+                    new Notice("Companion MCP: Server restarted");
+                }));
+
+        containerEl.createEl("p", {
+            text: "The companion MCP server provides AI agent access to your Obsidian vault. Only connections from localhost are allowed."
+        });
     }
 }

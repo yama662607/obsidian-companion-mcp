@@ -11,20 +11,21 @@ type IndexedNote = {
 
 export class VectorStore {
     private indexPath: string;
+    private vaultPath: string;
+    private configDir: string;
 
-    constructor() {
-        const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-        const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
-
-        this.indexPath = vaultPath
-            ? path.join(vaultPath, configDir, "plugins", "companion-mcp", "data", "semantic-index.json")
-            : path.join(process.cwd(), "semantic-index.json");
+    constructor(vaultPath: string, configDir: string) {
+        this.vaultPath = vaultPath;
+        this.configDir = configDir;
+        this.indexPath = path.join(vaultPath, configDir, "plugins", "companion-mcp", "data", "semantic-index.json");
     }
 
     /**
-     * Updates the index path dynamically.
+     * Updates the index path dynamically (called after plugin handshake).
      */
     public updateIndexPath(vaultPath: string, configDir: string): void {
+        this.vaultPath = vaultPath;
+        this.configDir = configDir;
         this.indexPath = path.join(vaultPath, configDir, "plugins", "companion-mcp", "data", "semantic-index.json");
     }
 

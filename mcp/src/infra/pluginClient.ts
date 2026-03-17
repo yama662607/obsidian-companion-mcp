@@ -140,6 +140,7 @@ export class PluginClient {
 
             const json = (await response.json()) as JsonRpcResponse<TResult>;
             if (isJsonRpcFailure(json)) {
+                this.transition("normal", null, null);
                 throw new DomainError(
                     json.error.code as never,
                     json.error.message,
@@ -147,8 +148,12 @@ export class PluginClient {
                 );
             }
 
+            this.transition("normal", null, null);
             return json.result;
         } catch (error) {
+            if (error instanceof DomainError) {
+                throw error;
+            }
             const correlationId = error instanceof DomainError ? error.correlationId : `corr-${Date.now()}`;
             this.transition("degraded", "plugin_unavailable", correlationId);
             throw new DomainError("UNAVAILABLE", "Plugin communication failed", correlationId);

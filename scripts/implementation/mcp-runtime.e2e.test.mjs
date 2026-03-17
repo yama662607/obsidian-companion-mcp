@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -16,20 +17,31 @@ function inheritedEnv() {
     return Object.fromEntries(Object.entries(process.env).filter(([, value]) => typeof value === "string"));
 }
 
-async function createMcpClient() {
+async function createMcpClient(options = {}) {
+    const { envOverrides = {}, includeDefaultVaultPath = true, unsetEnvKeys = [] } = options;
     const sdkRoot = path.join(repoRoot, "mcp", "node_modules", "@modelcontextprotocol", "sdk", "dist", "esm");
     const { Client } = await import(pathToFileURL(path.join(sdkRoot, "client", "index.js")).href);
     const { StdioClientTransport } = await import(pathToFileURL(path.join(sdkRoot, "client", "stdio.js")).href);
+
+    const inherited = inheritedEnv();
+    for (const key of unsetEnvKeys) {
+        delete inherited[key];
+    }
+
+    const env = {
+        ...inherited,
+        OBSIDIAN_COMPANION_API_KEY: "local-dev-key",
+        ...envOverrides,
+    };
+    if (includeDefaultVaultPath) {
+        env.OBSIDIAN_VAULT_PATH = e2eVaultRoot;
+    }
 
     const transport = new StdioClientTransport({
         command: "node",
         args: [path.join(repoRoot, "mcp", "dist", "index.js")],
         cwd: repoRoot,
-        env: {
-            ...inheritedEnv(),
-            OBSIDIAN_COMPANION_API_KEY: "local-dev-key",
-            OBSIDIAN_VAULT_PATH: e2eVaultRoot,
-        },
+        env,
         stderr: "pipe",
     });
 
@@ -48,6 +60,41 @@ async function createMcpClient() {
                 await client.close();
             }
             await transport.close();
+        },
+    };
+}
+
+async function startMockPluginServer(responseFactory) {
+    const server = http.createServer(async (req, res) => {
+        let body = "";
+        for await (const chunk of req) {
+            body += chunk.toString();
+        }
+
+        const request = JSON.parse(body);
+        const response = responseFactory(request);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(response));
+    });
+
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") {
+        throw new Error("Failed to determine mock plugin server port");
+    }
+
+    return {
+        port: address.port,
+        async close() {
+            await new Promise((resolve, reject) => {
+                server.close((error) => {
+                    if (error) {
+                        reject(error);
+                        return;
+                    }
+                    resolve(undefined);
+                });
+            });
         },
     };
 }
@@ -150,6 +197,68 @@ test("mcp e2e: note, metadata, and semantic flow behaves consistently", async (t
     });
     assert.ok(!deleted.isError);
     assert.equal(deleted.structuredContent.deleted, true);
+});
+
+test("mcp e2e: startup can discover vault path from plugin handshake", async (t) => {
+    const discoveredVaultRoot = path.join(repoRoot, ".tmp", "mcp-e2e-auto-vault");
+    fs.rmSync(discoveredVaultRoot, { recursive: true, force: true });
+    fs.mkdirSync(discoveredVaultRoot, { recursive: true });
+
+    const mockPlugin = await startMockPluginServer((request) => {
+        if (request.method === "health.ping") {
+            return {
+                jsonrpc: "2.0",
+                id: request.id,
+                protocolVersion: request.protocolVersion,
+                result: {
+                    capabilities: ["health.ping"],
+                    availability: "normal",
+                    configDir: ".obsidian",
+                    vaultPath: discoveredVaultRoot,
+                },
+            };
+        }
+
+        return {
+            jsonrpc: "2.0",
+            id: request.id,
+            error: {
+                code: "UNAVAILABLE",
+                message: "mock plugin only supports health.ping",
+                data: { correlationId: "corr-mock-plugin" },
+            },
+        };
+    });
+
+    const session = await createMcpClient({
+        includeDefaultVaultPath: false,
+        unsetEnvKeys: ["OBSIDIAN_VAULT_PATH", "OBSIDIAN_CONFIG_DIR"],
+        envOverrides: {
+            OBSIDIAN_PLUGIN_PORT: String(mockPlugin.port),
+        },
+    });
+
+    t.after(async () => {
+        await session.close();
+        await mockPlugin.close();
+    });
+
+    const listed = await session.client.listTools();
+    assert.ok(listed.tools.length > 0);
+
+    const created = await session.client.callTool({
+        name: "create_note",
+        arguments: {
+            path: "auto/discovered.md",
+            content: "# Auto Configured Vault",
+        },
+    });
+
+    assert.ok(!created.isError);
+    assert.equal(
+        fs.existsSync(path.join(discoveredVaultRoot, "auto", "discovered.md")),
+        true,
+    );
 });
 
 test("mcp e2e: runtime status resource is readable", async (t) => {

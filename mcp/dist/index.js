@@ -128,14 +128,19 @@ var PluginClient = class {
       }
       const json = await response.json();
       if (isJsonRpcFailure(json)) {
+        this.transition("normal", null, null);
         throw new DomainError(
           json.error.code,
           json.error.message,
           json.error.data?.correlationId
         );
       }
+      this.transition("normal", null, null);
       return json.result;
     } catch (error) {
+      if (error instanceof DomainError) {
+        throw error;
+      }
       const correlationId = error instanceof DomainError ? error.correlationId : `corr-${Date.now()}`;
       this.transition("degraded", "plugin_unavailable", correlationId);
       throw new DomainError("UNAVAILABLE", "Plugin communication failed", correlationId);
@@ -168,6 +173,45 @@ var PluginClient = class {
     this.lastCorrelationId = correlationId;
   }
 };
+
+// ../shared/editorPositions.ts
+function getEditorLines(content) {
+  return content.split("\n");
+}
+function compareEditorPositions(a, b) {
+  if (a.line !== b.line) {
+    return a.line - b.line;
+  }
+  return a.ch - b.ch;
+}
+function validateEditorPosition(content, position, label = "Position") {
+  if (position.line < 0 || position.ch < 0) {
+    return `${label} must be non-negative`;
+  }
+  const lines = getEditorLines(content);
+  if (position.line >= lines.length) {
+    return `${label} line ${position.line} exceeds content line count ${lines.length}`;
+  }
+  const lineLength = lines[position.line]?.length ?? 0;
+  if (position.ch > lineLength) {
+    return `${label} ch ${position.ch} exceeds line length ${lineLength} at line ${position.line}`;
+  }
+  return null;
+}
+function validateEditorRange(content, range) {
+  const fromError = validateEditorPosition(content, range.from, "Range start");
+  if (fromError) {
+    return fromError;
+  }
+  const toError = validateEditorPosition(content, range.to, "Range end");
+  if (toError) {
+    return toError;
+  }
+  if (compareEditorPositions(range.from, range.to) > 0) {
+    return "Range start must not be after range end";
+  }
+  return null;
+}
 
 // src/domain/editorService.ts
 var EditorService = class {
@@ -206,12 +250,9 @@ var EditorService = class {
     if (!this.context.cursor || position.line < 0 || position.ch < 0) {
       throw new DomainError("VALIDATION", "Invalid insert position");
     }
-    const lineCount = this.context.content.length === 0 ? 1 : this.context.content.split("\n").length;
-    if (position.line >= lineCount) {
-      throw new DomainError(
-        "VALIDATION",
-        `Insert position line ${position.line} exceeds content line count ${lineCount}`
-      );
+    const validationError = validateEditorPosition(this.context.content, position, "Insert position");
+    if (validationError) {
+      throw new DomainError("VALIDATION", validationError);
     }
     try {
       const context = await this.pluginClient.send("editor.applyCommand", {
@@ -241,9 +282,9 @@ var EditorService = class {
     }
   }
   async replaceRange(text, range) {
-    const invalid = range.from.line < 0 || range.from.ch < 0 || range.to.line < 0 || range.to.ch < 0;
-    if (invalid) {
-      throw new DomainError("VALIDATION", "Invalid replace range");
+    const validationError = validateEditorRange(this.context.content, range);
+    if (validationError) {
+      throw new DomainError("VALIDATION", validationError);
     }
     try {
       const context = await this.pluginClient.send("editor.applyCommand", {
@@ -272,23 +313,26 @@ var EditorService = class {
 // src/domain/embeddingProvider.ts
 import { pipeline, env } from "@xenova/transformers";
 import path from "path";
-import os from "os";
 import fs from "fs";
 var LocalEmbeddingProvider = class {
   kind = "local";
   extractor = null;
   modelName = "Xenova/multilingual-e5-small";
   modelDir;
-  constructor() {
-    const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-    const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
-    this.modelDir = vaultPath ? path.join(vaultPath, configDir, "plugins", "companion-mcp", "models") : path.join(os.homedir(), ".cache", "obsidian-companion-mcp", "models");
+  vaultPath;
+  configDir;
+  constructor(vaultPath, configDir) {
+    this.vaultPath = vaultPath;
+    this.configDir = configDir;
+    this.modelDir = path.join(vaultPath, configDir, "plugins", "companion-mcp", "models");
     this.applyModelPath();
   }
   /**
-   * Updates the model directory dynamically.
+   * Updates the model directory dynamically (called after plugin handshake).
    */
   updateModelPath(vaultPath, configDir) {
+    this.vaultPath = vaultPath;
+    this.configDir = configDir;
     this.modelDir = path.join(vaultPath, configDir, "plugins", "companion-mcp", "models");
     this.applyModelPath();
   }
@@ -356,8 +400,13 @@ var RemoteEmbeddingProvider = class {
     return Promise.resolve([score, score / 2, score / 4]);
   }
 };
-function createEmbeddingProvider(preferRemote = false) {
-  return preferRemote ? new RemoteEmbeddingProvider() : new LocalEmbeddingProvider();
+function createEmbeddingProvider(preferRemote = false, vaultPath = "", configDir = "") {
+  if (preferRemote) {
+    return new RemoteEmbeddingProvider();
+  }
+  const effectiveVaultPath = vaultPath || "/tmp";
+  const effectiveConfigDir = configDir || ".obsidian";
+  return new LocalEmbeddingProvider(effectiveVaultPath, effectiveConfigDir);
 }
 
 // src/domain/indexingQueue.ts
@@ -416,8 +465,8 @@ var SemanticService = class {
   notes = /* @__PURE__ */ new Map();
   queue = new IndexingQueue();
   provider;
-  constructor(preferRemote = false) {
-    this.provider = createEmbeddingProvider(preferRemote);
+  constructor(preferRemote = false, vaultPath = "", configDir = "") {
+    this.provider = createEmbeddingProvider(preferRemote, vaultPath, configDir);
   }
   queueIndex(path4, snippet, updatedAt) {
     return this.queue.enqueue({ path: path4, content: snippet, updatedAt });
@@ -732,15 +781,15 @@ var NoteService = class {
       this.semanticService?.remove(path4);
       return { deleted: true, degraded: false, degradedReason: null };
     } catch (error) {
+      const deleted = deleteNote(path4);
+      if (deleted) {
+        this.semanticService?.remove(path4);
+        return { deleted: true, degraded: true, degradedReason: "plugin_unavailable" };
+      }
       if (error instanceof DomainError && error.code === "NOT_FOUND") {
         throw error;
       }
-      const deleted = deleteNote(path4);
-      if (!deleted) {
-        throw new DomainError("NOT_FOUND", `Note not found: ${path4}`);
-      }
-      this.semanticService?.remove(path4);
-      return { deleted: true, degraded: true, degradedReason: "plugin_unavailable" };
+      throw new DomainError("NOT_FOUND", `Note not found: ${path4}`);
     }
   }
   async updateMetadata(path4, metadata) {
@@ -789,15 +838,19 @@ import { promises as fs3 } from "fs";
 import path3 from "path";
 var VectorStore = class {
   indexPath;
-  constructor() {
-    const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-    const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
-    this.indexPath = vaultPath ? path3.join(vaultPath, configDir, "plugins", "companion-mcp", "data", "semantic-index.json") : path3.join(process.cwd(), "semantic-index.json");
+  vaultPath;
+  configDir;
+  constructor(vaultPath, configDir) {
+    this.vaultPath = vaultPath;
+    this.configDir = configDir;
+    this.indexPath = path3.join(vaultPath, configDir, "plugins", "companion-mcp", "data", "semantic-index.json");
   }
   /**
-   * Updates the index path dynamically.
+   * Updates the index path dynamically (called after plugin handshake).
    */
   updateIndexPath(vaultPath, configDir) {
+    this.vaultPath = vaultPath;
+    this.configDir = configDir;
     this.indexPath = path3.join(vaultPath, configDir, "plugins", "companion-mcp", "data", "semantic-index.json");
   }
   async load() {
@@ -1512,24 +1565,15 @@ function registerAgentRuntimeReviewPrompt(server) {
 }
 
 // src/server.ts
-function createServer() {
-  const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-  const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
-  if (!vaultPath) {
-    throw new DomainError(
-      "VALIDATION",
-      "Missing required environment variable: OBSIDIAN_VAULT_PATH must be set."
-    );
-  }
+function createServer(runtimePaths, pluginClient = new PluginClient()) {
   const server = new McpServer({
     name: "obsidian-companion-mcp",
     version: "0.1.0"
   });
-  const pluginClient = new PluginClient();
-  const editorService = new EditorService(pluginClient);
   const useRemote = process.env.USE_REMOTE_EMBEDDING === "true";
-  const semanticService = new SemanticService(useRemote);
-  const vectorStore = new VectorStore();
+  const semanticService = new SemanticService(useRemote, runtimePaths.vaultPath, runtimePaths.configDir);
+  const vectorStore = new VectorStore(runtimePaths.vaultPath, runtimePaths.configDir);
+  const editorService = new EditorService(pluginClient);
   const noteService = new NoteService(pluginClient, semanticService);
   registerSemanticSearchTool(server, semanticService);
   registerEditorTools(server, editorService);
@@ -1545,8 +1589,41 @@ function createServer() {
   registerAgentRuntimeReviewPrompt(server);
   return { server, pluginClient, semanticService, vectorStore };
 }
+async function resolveRuntimePaths(pluginClient) {
+  const envVaultPath = process.env.OBSIDIAN_VAULT_PATH?.trim();
+  const envConfigDir = process.env.OBSIDIAN_CONFIG_DIR?.trim();
+  let handshake = null;
+  try {
+    handshake = await pluginClient.connect();
+    logInfo("startup handshake completed");
+  } catch (error) {
+    const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "startup handshake failed");
+    logError(
+      `startup handshake failed code=${domainError.code} correlationId=${domainError.correlationId} reason=${pluginClient.getRuntimeStatus().degradedReason ?? "n/a"}`
+    );
+  }
+  const vaultPath = envVaultPath ?? handshake?.vaultPath;
+  if (!vaultPath) {
+    throw new DomainError(
+      "VALIDATION",
+      "Missing required vault path. Set OBSIDIAN_VAULT_PATH or start the Obsidian Companion plugin so the vault can be discovered automatically."
+    );
+  }
+  const configDir = envConfigDir ?? handshake?.configDir ?? ".obsidian";
+  if (!process.env.OBSIDIAN_VAULT_PATH) {
+    process.env.OBSIDIAN_VAULT_PATH = vaultPath;
+    logInfo(`applying dynamic configuration: vaultPath=${vaultPath}`);
+  }
+  if (!process.env.OBSIDIAN_CONFIG_DIR) {
+    process.env.OBSIDIAN_CONFIG_DIR = configDir;
+    logInfo(`applying dynamic configuration: configDir=${configDir}`);
+  }
+  return { vaultPath, configDir, handshake };
+}
 async function runServer() {
-  const { server, pluginClient, semanticService, vectorStore } = createServer();
+  const pluginClient = new PluginClient();
+  const runtimePaths = await resolveRuntimePaths(pluginClient);
+  const { server, semanticService, vectorStore } = createServer(runtimePaths, pluginClient);
   const existingNotes = await vectorStore.load();
   semanticService.setNotes(existingNotes);
   const shutdown = async () => {
@@ -1560,25 +1637,6 @@ async function runServer() {
   const saveInterval = setInterval(async () => {
     await vectorStore.save(semanticService.getNotes());
   }, 5 * 60 * 1e3);
-  try {
-    const handshake = await pluginClient.connect();
-    logInfo("startup handshake completed");
-    if (handshake.configDir && process.env.OBSIDIAN_VAULT_PATH) {
-      const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-      logInfo(`applying dynamic configuration: configDir=${handshake.configDir}`);
-      vectorStore.updateIndexPath(vaultPath, handshake.configDir);
-      if (semanticService.getProvider().kind === "local") {
-        semanticService.getProvider().updateModelPath(vaultPath, handshake.configDir);
-      }
-      const updatedNotes = await vectorStore.load();
-      semanticService.setNotes(updatedNotes);
-    }
-  } catch (error) {
-    const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "startup handshake failed");
-    logError(
-      `startup handshake failed code=${domainError.code} correlationId=${domainError.correlationId} reason=${pluginClient.getRuntimeStatus().degradedReason ?? "n/a"}`
-    );
-  }
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

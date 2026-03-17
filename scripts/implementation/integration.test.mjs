@@ -34,4 +34,6 @@ test("server performs startup handshake and registers runtime status resource", 
     assert.match(source, /pluginClient\.connect\(/);
     assert.match(source, /registerRuntimeStatusResource/);
     assert.match(source, /startup handshake/);
+    assert.match(source, /handshake\?\.vaultPath/);
+    assert.match(source, /process\.env\.OBSIDIAN_VAULT_PATH = vaultPath/);
 });

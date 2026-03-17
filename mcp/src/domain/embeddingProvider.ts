@@ -15,22 +15,22 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
     private extractor: FeatureExtractionPipeline | null = null;
     private modelName = "Xenova/multilingual-e5-small";
     private modelDir: string;
+    private vaultPath: string;
+    private configDir: string;
 
-    constructor() {
-        const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
-        const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
-
-        this.modelDir = vaultPath 
-            ? path.join(vaultPath, configDir, "plugins", "companion-mcp", "models")
-            : path.join(os.homedir(), ".cache", "obsidian-companion-mcp", "models");
-
+    constructor(vaultPath: string, configDir: string) {
+        this.vaultPath = vaultPath;
+        this.configDir = configDir;
+        this.modelDir = path.join(vaultPath, configDir, "plugins", "companion-mcp", "models");
         this.applyModelPath();
     }
 
     /**
-     * Updates the model directory dynamically.
+     * Updates the model directory dynamically (called after plugin handshake).
      */
     public updateModelPath(vaultPath: string, configDir: string): void {
+        this.vaultPath = vaultPath;
+        this.configDir = configDir;
         this.modelDir = path.join(vaultPath, configDir, "plugins", "companion-mcp", "models");
         this.applyModelPath();
     }
@@ -118,6 +118,16 @@ export class RemoteEmbeddingProvider implements EmbeddingProvider {
     }
 }
 
-export function createEmbeddingProvider(preferRemote = false): EmbeddingProvider {
-    return preferRemote ? new RemoteEmbeddingProvider() : new LocalEmbeddingProvider();
+export function createEmbeddingProvider(
+    preferRemote = false,
+    vaultPath = "",
+    configDir = ""
+): EmbeddingProvider {
+    if (preferRemote) {
+        return new RemoteEmbeddingProvider();
+    }
+    // Use dummy paths if not provided yet (will be updated after plugin handshake)
+    const effectiveVaultPath = vaultPath || "/tmp";
+    const effectiveConfigDir = configDir || ".obsidian";
+    return new LocalEmbeddingProvider(effectiveVaultPath, effectiveConfigDir);
 }

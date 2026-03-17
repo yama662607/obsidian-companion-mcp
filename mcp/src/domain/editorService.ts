@@ -1,5 +1,6 @@
 import { DomainError } from "./errors";
 import type { PluginClient } from "../infra/pluginClient";
+import { validateEditorPosition, validateEditorRange } from "../../../shared/editorPositions";
 
 export interface EditorContext {
     [key: string]: unknown;
@@ -55,12 +56,9 @@ export class EditorService {
             throw new DomainError("VALIDATION", "Invalid insert position");
         }
 
-        const lineCount = this.context.content.length === 0 ? 1 : this.context.content.split("\n").length;
-        if (position.line >= lineCount) {
-            throw new DomainError(
-                "VALIDATION",
-                `Insert position line ${position.line} exceeds content line count ${lineCount}`,
-            );
+        const validationError = validateEditorPosition(this.context.content, position, "Insert position");
+        if (validationError) {
+            throw new DomainError("VALIDATION", validationError);
         }
 
         try {
@@ -99,14 +97,9 @@ export class EditorService {
         text: string,
         range: { from: { line: number; ch: number }; to: { line: number; ch: number } },
     ): Promise<EditorOperationResult> {
-        const invalid =
-            range.from.line < 0 ||
-            range.from.ch < 0 ||
-            range.to.line < 0 ||
-            range.to.ch < 0;
-
-        if (invalid) {
-            throw new DomainError("VALIDATION", "Invalid replace range");
+        const validationError = validateEditorRange(this.context.content, range);
+        if (validationError) {
+            throw new DomainError("VALIDATION", validationError);
         }
 
         try {
