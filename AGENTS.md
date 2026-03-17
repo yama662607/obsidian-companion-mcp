@@ -6,7 +6,7 @@ This document provides guidelines for AI agents working on this project.
 
 Obsidian Companion MCP - A hybrid Model Context Protocol ecosystem for Obsidian.
 
-- **Bridge (`/bridge`)**: Node.js MCP server that proxies AI agent requests to the Obsidian plugin
+- **MCP (`/mcp`)**: Node.js MCP server that proxies AI agent requests to the Obsidian plugin
 - **Plugin (`/plugin`)**: Obsidian plugin for semantic indexing and real-time editor context
 
 ## Justfile Usage
@@ -29,9 +29,9 @@ This project uses `just` for task automation. Follow these commands:
 - `just test [args]` — Run tests
 - `just build` — Build all subprojects
 - `just clean` — Remove build artifacts
-- `just dev-bridge` — Start bridge development
+- `just dev-mcp` — Start mcp development
 - `just dev-plugin` — Start plugin development
-- `just bridge-build` — Build bridge only
+- `just mcp-build` — Build mcp only
 - `just plugin-build` — Build plugin only
 - `just upgrade` — Upgrade dependencies
 

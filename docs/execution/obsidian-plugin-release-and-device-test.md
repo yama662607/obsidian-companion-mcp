@@ -34,7 +34,7 @@ just plugin-install-local /absolute/path/to/YourVault
 5. 期待動作を確認する
    - 起動時エラーが出ない
    - エディタ関連機能が利用できる
-   - bridge から接続できる
+   - mcp から接続できる
 
 ## 3. 公開前チェック
 

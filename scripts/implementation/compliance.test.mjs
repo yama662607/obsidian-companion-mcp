@@ -11,12 +11,12 @@ import {
 const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
 
 function collectToolSources() {
-    const dir = path.join(repoRoot, "bridge", "src", "tools");
+    const dir = path.join(repoRoot, "mcp", "src", "tools");
     const files = fs.readdirSync(dir).filter((name) => name.endsWith(".ts"));
     return files.map((name) => {
         const filePath = path.join(dir, name);
         return {
-            filePath: `bridge/src/tools/${name}`,
+            filePath: `mcp/src/tools/${name}`,
             source: fs.readFileSync(filePath, "utf8"),
         };
     });

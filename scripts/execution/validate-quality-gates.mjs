@@ -95,8 +95,8 @@ export function validateContractPayloads(payloads) {
 }
 
 function collectToolFileSources(repoRoot) {
-    const bridgeSrc = path.join(repoRoot, "bridge", "src");
-    const files = walk(bridgeSrc).filter((filePath) => filePath.endsWith(".ts") || filePath.endsWith(".tsx"));
+    const mcpSrc = path.join(repoRoot, "mcp", "src");
+    const files = walk(mcpSrc).filter((filePath) => filePath.endsWith(".ts") || filePath.endsWith(".tsx"));
     return files.map((filePath) => ({
         filePath: path.relative(repoRoot, filePath),
         source: fs.readFileSync(filePath, "utf8"),

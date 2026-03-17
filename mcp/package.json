@@ -1,19 +1,19 @@
 {
-  "name": "@yama662607/obsidian-companion-bridge",
+  "name": "@yama662607/obsidian-companion-mcp",
   "version": "0.1.0",
-  "description": "MCP Bridge for Obsidian Companion Plugin",
+  "description": "MCP server for Obsidian Companion Plugin",
   "author": "Daisuke Yamashiki",
   "license": "MIT",
   "keywords": [
     "mcp",
     "obsidian",
-    "bridge",
+    "mcp-server",
     "ai-agent"
   ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/yama662607/obsidian-companion-mcp.git",
-    "directory": "bridge"
+    "directory": "mcp"
   },
   "type": "module",
   "main": "dist/index.js",

@@ -21,20 +21,7 @@ class LocalJsonRpcHost {
         content: "",
     };
 
-    constructor(private readonly apiKey: string) { }
-
-    async handle(request: JsonRpcRequest<unknown>, authorization?: string): Promise<JsonRpcResponse<unknown>> {
-        if (request.method !== "health.ping" && authorization !== this.apiKey) {
-            return {
-                jsonrpc: "2.0",
-                id: request.id,
-                error: {
-                    code: "AUTH",
-                    message: "Invalid API key",
-                    data: { correlationId: `corr-${Date.now()}` },
-                },
-            };
-        }
+    async handle(request: JsonRpcRequest<unknown>): Promise<JsonRpcResponse<unknown>> {
 
         if (request.method === "health.ping") {
             const result: HandshakeResult = {
@@ -133,10 +120,9 @@ class LocalJsonRpcHost {
 
 export default class ObsidianCompanionPlugin extends Plugin {
     private host: LocalJsonRpcHost | null = null;
-    private readonly apiKey = "local-dev-key";
 
     async onload(): Promise<void> {
-        this.host = new LocalJsonRpcHost(this.apiKey);
+        this.host = new LocalJsonRpcHost();
         this.registerEvent(this.app.workspace.on("active-leaf-change", () => { }));
     }
 

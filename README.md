@@ -7,7 +7,14 @@ A hybrid Model Context Protocol (MCP) ecosystem for Obsidian, providing vault-wi
 This project consists of two main components:
 
 1.  **Plugin (`/plugin`)**: An Obsidian plugin that handles background indexing, semantic embedding generation, and exposes a local API for real-time editor context (cursor, selection, etc.).
-2.  **Bridge (`/bridge`)**: A lightweight Node.js CLI that acts as an MCP server. It proxies requests from AI Agents (like Claude or Cursor) to the Obsidian Plugin.
+2.  **MCP (`/mcp`)**: A lightweight Node.js CLI that acts as an MCP server. It proxies requests from AI Agents (like Claude or Cursor) to the Obsidian Plugin.
+
+## npm Packages
+
+- **Canonical MCP package**: `@yama662607/obsidian-companion-mcp`
+- **Plugin package**: `@yama662607/obsidian-companion-plugin`
+
+`@yama662607/obsidian-companion-bridge` is deprecated and kept only as a migration alias.
 
 ## Features (Planned)
 
@@ -21,7 +28,7 @@ This project consists of two main components:
 - **Language**: TypeScript
 - **Runtime**: Node.js >= 20
 - **Semantic Engine**: Transformers.js (Local) or OpenAI API
-- **Communication**: Local WebSocket/HTTP Bridge
+- **Communication**: Local WebSocket/HTTP MCP
 
 ## Related Projects
 

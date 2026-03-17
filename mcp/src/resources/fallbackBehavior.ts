@@ -19,9 +19,10 @@ export function registerFallbackBehaviorResource(server: McpServer): void {
                         {
                             degradedMode: {
                                 triggers: ["plugin-unreachable", "compatibility-failed"],
-                                noteOperations: "file-backed fallback",
-                                metadataOperations: "file-backed fallback",
+                                noteOperations: "vault file-backed fallback",
+                                metadataOperations: "vault file-backed fallback",
                                 semanticSearch: "unavailable",
+                                requiredEnv: ["OBSIDIAN_VAULT_PATH"],
                             },
                         },
                         null,

@@ -13,5 +13,5 @@ Standard MCP servers only see what's on the disk. Our Companion sees what's in t
 - **Excalidraw Isolation**: Visual editing logic remains in a separate CLI (`obsidian-excalidraw-mcp`). This keeps the Companion lightweight and relevant to all Obsidian users.
 - **Local-First AI**: We favor local embedding generation (e.g., Transformers.js) to ensure privacy and offline capability, but allow API overrides for speed/quality.
 
-## 4. Stability via Bridge
-The Bridge CLI protects the Agent from Obsidian restarts. If Obsidian closes, the Bridge can provide clear error messages or fallback to basic file operations, preventing the Agent from crashing.
+## 4. Stability via MCP
+The MCP CLI protects the Agent from Obsidian restarts. If Obsidian closes, the MCP can provide clear error messages or fallback to basic file operations, preventing the Agent from crashing.

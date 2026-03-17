@@ -15,9 +15,9 @@ A hybrid MCP server and Obsidian plugin that provides vault-wide semantic intell
   - **Background Indexing**: Monitor file changes and update vector embeddings.
   - **Semantic Engine**: Generate embeddings locally using `Transformers.js` or via OpenAI API.
   - **Context Provider**: Expose active editor state (cursor, selection) via a local server.
-  - **Local Server**: Host a WebSocket or HTTP server (localhost-only) to communicate with the Bridge.
+  - **Local Server**: Host a WebSocket or HTTP server (localhost-only) to communicate with the MCP.
 
-### Component 2: MCP Bridge (The Interface)
+### Component 2: MCP MCP (The Interface)
 - **Tech**: Node.js, MCP SDK.
 - **Responsibilities**:
   - **Stdio Interface**: Standard JSON-RPC interface for AI Agents.
@@ -35,9 +35,9 @@ A hybrid MCP server and Obsidian plugin that provides vault-wide semantic intell
 - `update_note_metadata`: Patch frontmatter/tags with validation.
 
 ## Verification Plan
-### PHASE 1: Bridge-Plugin Communication
+### PHASE 1: MCP-Plugin Communication
 - [ ] Create a "Hello World" plugin that opens a WebSocket server.
-- [ ] Create a CLI Bridge that connects and receives a response.
+- [ ] Create a CLI MCP that connects and receives a response.
 
 ### PHASE 2: Editor Context
 - [ ] Verify `getCursor()` and `getValue()` return accurate unsaved data.

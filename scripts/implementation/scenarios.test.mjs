@@ -18,7 +18,7 @@ test("editor context scenario is implemented in plugin host", () => {
 });
 
 test("editor tools expose degraded and no-active-editor signals", () => {
-    const source = read("bridge/src/tools/editorCommands.ts");
+    const source = read("mcp/src/tools/editorCommands.ts");
     assert.match(source, /degradedReason/);
     assert.match(source, /noActiveEditor/);
     assert.match(source, /No active editor/);
@@ -26,13 +26,13 @@ test("editor tools expose degraded and no-active-editor signals", () => {
 });
 
 test("replace_range degraded mode does not overwrite local content", () => {
-    const source = read("bridge/src/domain/editorService.ts");
+    const source = read("mcp/src/domain/editorService.ts");
     assert.match(source, /plugin_unavailable_range_replace_unsupported/);
     assert.doesNotMatch(source, /content:\s*`\$\{text\}`/);
 });
 
 test("semantic search returns deterministic structured shape", () => {
-    const source = read("bridge/src/tools/semanticSearch.ts");
+    const source = read("mcp/src/tools/semanticSearch.ts");
     assert.match(source, /okResult\(/);
     assert.match(source, /TOOL_NAMES\.SEARCH_NOTES_SEMANTIC/);
     assert.match(source, /matches/);
@@ -41,7 +41,7 @@ test("semantic search returns deterministic structured shape", () => {
 });
 
 test("note and metadata fallback behavior exists", () => {
-    const source = read("bridge/src/domain/noteService.ts");
+    const source = read("mcp/src/domain/noteService.ts");
     assert.match(source, /degraded: true/);
     assert.match(source, /degradedReason/);
     assert.match(source, /updateMetadata/);
@@ -50,14 +50,14 @@ test("note and metadata fallback behavior exists", () => {
 });
 
 test("delete_note missing path returns NOT_FOUND semantics", () => {
-    const source = read("bridge/src/domain/noteService.ts");
+    const source = read("mcp/src/domain/noteService.ts");
     assert.match(source, /new DomainError\("NOT_FOUND", `Note not found:/);
     assert.match(source, /throw error/);
     assert.match(source, /deleted:\s*true/);
 });
 
 test("fallback storage applies frontmatter for metadata round-trip", () => {
-    const source = read("bridge/src/infra/fallbackStorage.ts");
+    const source = read("mcp/src/infra/fallbackStorage.ts");
     assert.match(source, /renderFrontmatter/);
     assert.match(source, /applyFrontmatter/);
     assert.match(source, /stripFrontmatter/);
@@ -65,16 +65,23 @@ test("fallback storage applies frontmatter for metadata round-trip", () => {
     assert.match(source, /\^\\s\*---\\r\?\\n/);
 });
 
+test("fallback storage is anchored to OBSIDIAN_VAULT_PATH", () => {
+    const source = read("mcp/src/infra/fallbackStorage.ts");
+    assert.match(source, /OBSIDIAN_VAULT_PATH/);
+    assert.match(source, /path\.resolve\(vaultRoot, normalized\)/);
+    assert.match(source, /Path escapes vault root/);
+});
+
 test("delete_note keeps single-responsibility input contract", () => {
-    const source = read("bridge/src/tools/noteManagement.ts");
-    const schemaSource = read("bridge/src/schemas/notes.ts");
+    const source = read("mcp/src/tools/noteManagement.ts");
+    const schemaSource = read("mcp/src/schemas/notes.ts");
     assert.match(source, /TOOL_NAMES\.DELETE_NOTE/);
     assert.match(schemaSource, /Vault-relative markdown note path to delete/);
     assert.doesNotMatch(source, /TOOL_NAMES\.DELETE_NOTE[\s\S]*action:\s*z\.enum\(/);
 });
 
 test("note tools are split by decision unit and include metadata updater", () => {
-    const source = read("bridge/src/tools/noteManagement.ts");
+    const source = read("mcp/src/tools/noteManagement.ts");
     assert.match(source, /TOOL_NAMES\.CREATE_NOTE/);
     assert.match(source, /TOOL_NAMES\.GET_NOTE/);
     assert.match(source, /TOOL_NAMES\.UPDATE_NOTE_CONTENT/);
@@ -84,9 +91,9 @@ test("note tools are split by decision unit and include metadata updater", () =>
 });
 
 test("review support modules are registered for agent workflows", () => {
-    const serverSource = read("bridge/src/server.ts");
-    const resourceSource = read("bridge/src/resources/reviewChecklist.ts");
-    const promptSource = read("bridge/src/prompts/agentRuntimeReview.ts");
+    const serverSource = read("mcp/src/server.ts");
+    const resourceSource = read("mcp/src/resources/reviewChecklist.ts");
+    const promptSource = read("mcp/src/prompts/agentRuntimeReview.ts");
 
     assert.match(serverSource, /registerReviewChecklistResource/);
     assert.match(serverSource, /registerAgentRuntimeReviewPrompt/);
@@ -95,12 +102,12 @@ test("review support modules are registered for agent workflows", () => {
 });
 
 test("tool and resource names are centrally managed", () => {
-    const capability = read("bridge/src/resources/capabilityMatrix.ts");
-    const searchPrompt = read("bridge/src/prompts/searchThenInsert.ts");
-    const rewritePrompt = read("bridge/src/prompts/contextRewrite.ts");
-    const uris = read("bridge/src/constants/resourceUris.ts");
-    const names = read("bridge/src/constants/toolNames.ts");
-    const prompts = read("bridge/src/constants/promptNames.ts");
+    const capability = read("mcp/src/resources/capabilityMatrix.ts");
+    const searchPrompt = read("mcp/src/prompts/searchThenInsert.ts");
+    const rewritePrompt = read("mcp/src/prompts/contextRewrite.ts");
+    const uris = read("mcp/src/constants/resourceUris.ts");
+    const names = read("mcp/src/constants/toolNames.ts");
+    const prompts = read("mcp/src/constants/promptNames.ts");
 
     assert.match(capability, /TOOL_NAME_LIST/);
     assert.match(capability, /RESOURCE_URI_LIST/);

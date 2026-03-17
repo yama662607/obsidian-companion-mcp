@@ -12,7 +12,6 @@ export type Availability = "normal" | "degraded" | "unavailable";
 
 export type AvailabilityReason =
     | "startup_not_attempted"
-    | "missing_api_key"
     | "protocol_mismatch"
     | "retry_exhausted"
     | "plugin_unavailable";
@@ -37,20 +36,14 @@ export class PluginClient {
         private readonly expectedProtocolVersion = PROTOCOL_VERSION,
     ) { }
 
-    async connect(apiKey: string): Promise<HandshakeResult> {
+    async connect(): Promise<HandshakeResult> {
         this.retryCount = 0;
-
-        if (!apiKey) {
-            const error = new DomainError("AUTH", "API key is required to connect plugin");
-            this.transition("unavailable", "missing_api_key", error.correlationId);
-            throw error;
-        }
 
         for (let attempt = 1; attempt <= this.maxRetries; attempt += 1) {
             this.retryCount = attempt;
 
             try {
-                const result = await this.performHandshake(apiKey);
+                const result = await this.performHandshake();
                 const receivedProtocolVersion = result.protocolVersion ?? PROTOCOL_VERSION;
 
                 if (receivedProtocolVersion !== this.expectedProtocolVersion) {
@@ -131,7 +124,7 @@ export class PluginClient {
         };
     }
 
-    private async performHandshake(_apiKey: string): Promise<HandshakeResultWithVersion> {
+    private async performHandshake(): Promise<HandshakeResultWithVersion> {
         return {
             capabilities: [
                 "semantic.search",

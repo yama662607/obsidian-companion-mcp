@@ -10,9 +10,9 @@ function read(relativePath) {
 }
 
 test("runtime wiring connects startup handshake, plugin-first editor, and semantic linkage", () => {
-    const server = read("bridge/src/server.ts");
-    const editorService = read("bridge/src/domain/editorService.ts");
-    const noteService = read("bridge/src/domain/noteService.ts");
+    const server = read("mcp/src/server.ts");
+    const editorService = read("mcp/src/domain/editorService.ts");
+    const noteService = read("mcp/src/domain/noteService.ts");
 
     assert.match(server, /await pluginClient\.connect\(/);
     assert.match(server, /new EditorService\(pluginClient\)/);
@@ -26,8 +26,8 @@ test("runtime wiring connects startup handshake, plugin-first editor, and semant
 });
 
 test("semantic responses expose index readiness status", () => {
-    const semanticTool = read("bridge/src/tools/semanticSearch.ts");
-    const semanticService = read("bridge/src/domain/semanticService.ts");
+    const semanticTool = read("mcp/src/tools/semanticSearch.ts");
+    const semanticService = read("mcp/src/domain/semanticService.ts");
 
     assert.match(semanticTool, /TOOL_NAMES\.SEARCH_NOTES_SEMANTIC/);
     assert.match(semanticTool, /indexStatus/);
@@ -38,10 +38,10 @@ test("semantic responses expose index readiness status", () => {
 });
 
 test("tool surface uses split note operations instead of generic manage actions", () => {
-    const noteTool = read("bridge/src/tools/noteManagement.ts");
-    const matrix = read("bridge/src/resources/capabilityMatrix.ts");
-    const toolNames = read("bridge/src/constants/toolNames.ts");
-    const promptNames = read("bridge/src/constants/promptNames.ts");
+    const noteTool = read("mcp/src/tools/noteManagement.ts");
+    const matrix = read("mcp/src/resources/capabilityMatrix.ts");
+    const toolNames = read("mcp/src/constants/toolNames.ts");
+    const promptNames = read("mcp/src/constants/promptNames.ts");
 
     assert.match(noteTool, /TOOL_NAMES\.CREATE_NOTE/);
     assert.match(noteTool, /TOOL_NAMES\.GET_NOTE/);

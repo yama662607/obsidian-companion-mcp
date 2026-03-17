@@ -1,26 +1,34 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
+const e2eVaultRoot = path.join(repoRoot, ".tmp", "mcp-e2e-vault");
+
+function resetE2EVault() {
+    fs.rmSync(e2eVaultRoot, { recursive: true, force: true });
+    fs.mkdirSync(e2eVaultRoot, { recursive: true });
+}
 
 function inheritedEnv() {
     return Object.fromEntries(Object.entries(process.env).filter(([, value]) => typeof value === "string"));
 }
 
 async function createMcpClient() {
-    const sdkRoot = path.join(repoRoot, "bridge", "node_modules", "@modelcontextprotocol", "sdk", "dist", "esm");
+    const sdkRoot = path.join(repoRoot, "mcp", "node_modules", "@modelcontextprotocol", "sdk", "dist", "esm");
     const { Client } = await import(pathToFileURL(path.join(sdkRoot, "client", "index.js")).href);
     const { StdioClientTransport } = await import(pathToFileURL(path.join(sdkRoot, "client", "stdio.js")).href);
 
     const transport = new StdioClientTransport({
         command: "node",
-        args: [path.join(repoRoot, "bridge", "dist", "index.js")],
+        args: [path.join(repoRoot, "mcp", "dist", "index.js")],
         cwd: repoRoot,
         env: {
             ...inheritedEnv(),
             OBSIDIAN_COMPANION_API_KEY: "local-dev-key",
+            OBSIDIAN_VAULT_PATH: e2eVaultRoot,
         },
         stderr: "pipe",
     });
@@ -83,6 +91,7 @@ test("mcp e2e: refactored tool surface is discoverable", async (t) => {
 });
 
 test("mcp e2e: note, metadata, and semantic flow behaves consistently", async (t) => {
+    resetE2EVault();
     const session = await createMcpClient();
     t.after(async () => {
         await session.close();
@@ -98,6 +107,7 @@ test("mcp e2e: note, metadata, and semantic flow behaves consistently", async (t
         },
     });
     assert.ok(!created.isError);
+    assert.ok(fs.existsSync(path.join(e2eVaultRoot, pathArg)));
 
     const updatedMetadata = await session.client.callTool({
         name: "update_note_metadata",
@@ -182,7 +192,7 @@ test("mcp e2e: review checklist resource and agent review prompt are available",
     const loadedPrompt = await session.client.getPrompt({
         name: "workflow_agent_runtime_review",
         arguments: {
-            scope: "bridge tool surface",
+            scope: "mcp tool surface",
             severityThreshold: "medium",
         },
     });

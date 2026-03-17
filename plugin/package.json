@@ -1,7 +1,7 @@
 {
   "name": "@yama662607/obsidian-companion-plugin",
   "version": "0.1.0",
-  "description": "Obsidian Companion Plugin for Semantic Intelligence",
+  "description": "Obsidian plugin runtime exposing vault context to the companion MCP server and agent workflows",
   "author": "Daisuke Yamashiki",
   "license": "MIT",
   "keywords": [

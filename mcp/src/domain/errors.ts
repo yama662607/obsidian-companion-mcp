@@ -3,8 +3,7 @@ export type DomainErrorCode =
     | "NOT_FOUND"
     | "CONFLICT"
     | "UNAVAILABLE"
-    | "INTERNAL"
-    | "AUTH";
+    | "INTERNAL";
 
 export class DomainError extends Error {
     public readonly code: DomainErrorCode;

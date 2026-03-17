@@ -26,7 +26,7 @@
 
 ## ロールアウト推奨順
 
-1. startup handshake 有効版 bridge をデプロイする。
+1. startup handshake 有効版 mcp をデプロイする。
 2. Companion 単体 E2E を実行する。
 3. Dual MCP E2E を実行して証跡を残す。
 4. release-gate 方針に従って go/no-go 判定を行う。

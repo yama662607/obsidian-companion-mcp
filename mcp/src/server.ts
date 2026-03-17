@@ -26,7 +26,7 @@ export interface ServerRuntime {
 
 export function createServer(): ServerRuntime {
     const server = new McpServer({
-        name: "obsidian-companion-bridge",
+        name: "obsidian-companion-mcp",
         version: "0.1.0",
     });
 
@@ -56,10 +56,9 @@ export function createServer(): ServerRuntime {
 
 export async function runServer(): Promise<void> {
     const { server, pluginClient } = createServer();
-    const apiKey = process.env.OBSIDIAN_COMPANION_API_KEY ?? "local-dev-key";
 
     try {
-        await pluginClient.connect(apiKey);
+        await pluginClient.connect();
         logInfo("startup handshake completed");
     } catch (error) {
         const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "startup handshake failed");

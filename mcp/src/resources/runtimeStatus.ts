@@ -8,7 +8,7 @@ export function registerRuntimeStatusResource(server: McpServer, pluginClient: P
         RESOURCE_URIS.RUNTIME_STATUS,
         {
             title: "Runtime Status",
-            description: "Bridge runtime availability, retries, and degraded reason",
+            description: "MCP runtime availability, retries, and degraded reason",
             mimeType: "application/json",
         },
         async (uri) => ({

@@ -1,4 +1,4 @@
-# Technical Specification: Bridge-Plugin Communication
+# Technical Specification: MCP-Plugin Communication
 
 ## 1. Communication Protocol
 - **Transport**: WebSocket (preferred) or HTTP REST.
@@ -8,7 +8,7 @@
 ## 2. Authentication
 - **Mechanism**: API Key.
 - **Generation**: The Obsidian Plugin generates a random key on first run and displays it to the user.
-- **Exchange**: The Bridge must include this key in the `Authorization` header or as a connection parameter.
+- **Exchange**: The MCP must include this key in the `Authorization` header or as a connection parameter.
 
 ## 3. Core API Endpoints / Methods
 

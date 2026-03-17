@@ -19,9 +19,9 @@ For each new MCP entrypoint, answer in order:
 
 ## Ownership-Based Approval Routing (Task 3.3)
 
-- Bridge-only change: Bridge Owner + Reviewer approval.
+- MCP-only change: MCP Owner + Reviewer approval.
 - Plugin-only change: Plugin Owner + Reviewer approval.
-- Cross-module change: Bridge Owner + Plugin Owner + Integration Lead.
+- Cross-module change: MCP Owner + Plugin Owner + Integration Lead.
 - Release-impacting change: Release Owner approval required.
 
 Disagreement policy:

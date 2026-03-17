@@ -15,7 +15,7 @@ test("handshake and error envelopes satisfy contract policy", () => {
 });
 
 test("plugin client includes compatibility and degraded-mode transitions", () => {
-    const sourcePath = path.join(repoRoot, "bridge", "src", "infra", "pluginClient.ts");
+    const sourcePath = path.join(repoRoot, "mcp", "src", "infra", "pluginClient.ts");
     const source = fs.readFileSync(sourcePath, "utf8");
 
     assert.match(source, /Protocol version mismatch: expected/);
@@ -28,7 +28,7 @@ test("plugin client includes compatibility and degraded-mode transitions", () =>
 });
 
 test("server performs startup handshake and registers runtime status resource", () => {
-    const sourcePath = path.join(repoRoot, "bridge", "src", "server.ts");
+    const sourcePath = path.join(repoRoot, "mcp", "src", "server.ts");
     const source = fs.readFileSync(sourcePath, "utf8");
 
     assert.match(source, /pluginClient\.connect\(/);

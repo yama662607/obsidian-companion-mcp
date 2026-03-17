@@ -3,7 +3,7 @@
   "name": "Obsidian Companion MCP",
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
-  "description": "Enables AI agents to semantically search and interact with your vault via MCP.",
+  "description": "Enables AI agents to use MCP tools for semantic vault search and editor actions via the companion MCP server.",
   "author": "Daisuke Yamashiki",
   "authorUrl": "https://github.com/yama662607",
   "isDesktopOnly": true

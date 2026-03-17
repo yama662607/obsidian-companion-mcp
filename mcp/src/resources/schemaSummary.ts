@@ -7,7 +7,7 @@ export function registerSchemaSummaryResource(server: McpServer): void {
         RESOURCE_URIS.SCHEMA_SUMMARY,
         {
             title: "Tool Input Schemas",
-            description: "Summary of strict input schema policy for bridge tools",
+            description: "Summary of strict input schema policy for mcp tools",
             mimeType: "application/json",
         },
         async (uri) => ({

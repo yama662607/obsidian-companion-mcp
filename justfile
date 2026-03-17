@@ -11,7 +11,7 @@ pm := "npm"
 
 # Subprojects
 
-BRIDGE_DIR := "bridge"
+MCP_DIR := "mcp"
 PLUGIN_DIR := "plugin"
 
 # =============================================================================
@@ -24,7 +24,7 @@ default: check
 # Setup: Install dependencies for all subprojects
 setup:
     @echo "Setting up environment..."
-    cd {{ BRIDGE_DIR }} && {{ pm }} install
+    cd {{ MCP_DIR }} && {{ pm }} install
     cd {{ PLUGIN_DIR }} && {{ pm }} install
     @echo "Setup complete! Run 'just check' to verify."
 
@@ -43,7 +43,7 @@ fix: fmt lint-fix
 # Unit/integration tests with argument pass-through
 test *args="":
     @echo "Running tests..."
-    @cd {{ BRIDGE_DIR }} && {{ pm }} test {{ args }} 2>/dev/null || echo "No tests configured for bridge"
+    @cd {{ MCP_DIR }} && {{ pm }} test {{ args }} 2>/dev/null || echo "No tests configured for mcp"
     @cd {{ PLUGIN_DIR }} && {{ pm }} test {{ args }} 2>/dev/null || echo "No tests configured for plugin"
 
 # =============================================================================
@@ -94,10 +94,10 @@ lint-fix:
 # Check TypeScript types for all subprojects (skip if TypeScript not installed)
 typecheck:
     @echo "Checking types..."
-    @if [ -f "{{ BRIDGE_DIR }}/node_modules/.bin/tsc" ]; then \
-        cd {{ BRIDGE_DIR }} && npx tsc --noEmit; \
+    @if [ -f "{{ MCP_DIR }}/node_modules/.bin/tsc" ]; then \
+        cd {{ MCP_DIR }} && npx tsc --noEmit; \
     else \
-        echo "TypeScript not installed in bridge, run 'just setup' first."; \
+        echo "TypeScript not installed in mcp, run 'just setup' first."; \
     fi
     @if [ -f "{{ PLUGIN_DIR }}/node_modules/.bin/tsc" ]; then \
         cd {{ PLUGIN_DIR }} && npx tsc --noEmit; \
@@ -110,7 +110,7 @@ typecheck:
 # Validate execution governance checks and policy tests
 execution-check:
     @echo "Running execution quality gates..."
-    @cd {{ BRIDGE_DIR }} && {{ pm }} run build
+    @cd {{ MCP_DIR }} && {{ pm }} run build
     @node --test scripts/execution/validate-quality-gates.test.mjs scripts/implementation/*.test.mjs
     @node scripts/execution/validate-quality-gates.mjs
 
@@ -118,10 +118,10 @@ execution-check:
 # Operations & Utilities
 # =============================================================================
 
-# Start development (bridge)
-dev-bridge:
-    @echo "Starting bridge dev server..."
-    cd {{ BRIDGE_DIR }} && {{ pm }} run dev
+# Start development (mcp)
+dev-mcp:
+    @echo "Starting mcp dev server..."
+    cd {{ MCP_DIR }} && {{ pm }} run dev
 
 # Start development (plugin)
 dev-plugin:
@@ -131,26 +131,26 @@ dev-plugin:
 # Production build for all subprojects
 build:
     @echo "Building all artifacts..."
-    cd {{ BRIDGE_DIR }} && {{ pm }} run build
+    cd {{ MCP_DIR }} && {{ pm }} run build
     cd {{ PLUGIN_DIR }} && {{ pm }} run build
     @echo "Build complete!"
 
 # Remove build artifacts
 clean:
     @echo "Cleaning artifacts..."
-    rm -rf {{ BRIDGE_DIR }}/dist {{ BRIDGE_DIR }}/node_modules
+    rm -rf {{ MCP_DIR }}/dist {{ MCP_DIR }}/node_modules
     rm -rf {{ PLUGIN_DIR }}/dist {{ PLUGIN_DIR }}/main.js {{ PLUGIN_DIR }}/node_modules
 
 # =============================================================================
 # Subproject-specific Commands
 # =============================================================================
 
-# Bridge commands
-bridge-build:
-    cd {{ BRIDGE_DIR }} && {{ pm }} run build
+# MCP commands
+mcp-build:
+    cd {{ MCP_DIR }} && {{ pm }} run build
 
-bridge-start:
-    cd {{ BRIDGE_DIR }} && {{ pm }} run start
+mcp-start:
+    cd {{ MCP_DIR }} && {{ pm }} run start
 
 # Plugin commands
 plugin-build:
@@ -180,7 +180,7 @@ ensure-clean:
 upgrade: ensure-clean
     @echo "Baseline passed. Current code is stable."
     @echo "Starting full upgrade process..."
-    cd {{ BRIDGE_DIR }} && {{ pm }} update
+    cd {{ MCP_DIR }} && {{ pm }} update
     cd {{ PLUGIN_DIR }} && {{ pm }} update
     @echo "Verifying upgrade stability..."
     just check
