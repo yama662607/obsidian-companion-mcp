@@ -11,7 +11,7 @@ export function registerRuntimeStatusResource(server: McpServer, pluginClient: P
             description: "MCP runtime availability, retries, and degraded reason",
             mimeType: "application/json",
         },
-        async (uri) => ({
+         (uri) => ({
             contents: [
                 {
                     uri: uri.toString(),

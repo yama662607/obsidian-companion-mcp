@@ -11,7 +11,7 @@ export function registerActiveEditorContextResource(server: McpServer, editorSer
             description: "Read-only snapshot of active editor state",
             mimeType: "application/json",
         },
-        async (uri) => {
+         async (uri) => {
             const result = await editorService.getContext();
             const normalizedContext = {
                 activeFile: typeof result.context.activeFile === "string" ? result.context.activeFile : null,

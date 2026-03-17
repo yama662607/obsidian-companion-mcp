@@ -21,28 +21,27 @@ class LocalJsonRpcHost {
         content: "",
     };
 
-    async handle(request: JsonRpcRequest<unknown>): Promise<JsonRpcResponse<unknown>> {
-
+    handle(request: JsonRpcRequest<unknown>): Promise<JsonRpcResponse<unknown>> {
         if (request.method === "health.ping") {
             const result: HandshakeResult = {
                 capabilities: ["health.ping", "editor.getContext", "editor.applyCommand", "semantic.search", "notes.read"],
                 availability: "normal",
             };
-            return {
+            return Promise.resolve({
                 jsonrpc: "2.0",
                 id: request.id,
                 protocolVersion: PROTOCOL_VERSION,
                 result,
-            };
+            });
         }
 
         if (request.method === "editor.getContext") {
-            return {
+            return Promise.resolve({
                 jsonrpc: "2.0",
                 id: request.id,
                 protocolVersion: PROTOCOL_VERSION,
                 result: this.context,
-            };
+            });
         }
 
         if (request.method === "editor.applyCommand") {
@@ -60,7 +59,7 @@ class LocalJsonRpcHost {
 
             if (payload.command === "insertText") {
                 if (payload.pos.line < 0 || payload.pos.ch < 0) {
-                    return {
+                    return Promise.resolve({
                         jsonrpc: "2.0",
                         id: request.id,
                         error: {
@@ -68,7 +67,7 @@ class LocalJsonRpcHost {
                             message: "Invalid insert position",
                             data: { correlationId: `corr-${Date.now()}` },
                         },
-                    };
+                    });
                 }
                 this.context = {
                     ...this.context,
@@ -84,7 +83,7 @@ class LocalJsonRpcHost {
                     payload.range.to.line < 0 ||
                     payload.range.to.ch < 0;
                 if (invalid) {
-                    return {
+                    return Promise.resolve({
                         jsonrpc: "2.0",
                         id: request.id,
                         error: {
@@ -92,7 +91,7 @@ class LocalJsonRpcHost {
                             message: "Invalid replace range",
                             data: { correlationId: `corr-${Date.now()}` },
                         },
-                    };
+                    });
                 }
                 this.context = {
                     ...this.context,
@@ -101,29 +100,30 @@ class LocalJsonRpcHost {
                 };
             }
 
-            return {
+            return Promise.resolve({
                 jsonrpc: "2.0",
                 id: request.id,
                 protocolVersion: PROTOCOL_VERSION,
                 result: this.context,
-            };
+            });
         }
 
-        return {
+        return Promise.resolve({
             jsonrpc: "2.0",
             id: request.id,
             protocolVersion: PROTOCOL_VERSION,
             result: {},
-        };
+        });
     }
 }
 
 export default class ObsidianCompanionPlugin extends Plugin {
     private host: LocalJsonRpcHost | null = null;
 
-    async onload(): Promise<void> {
+    onload(): Promise<void> {
         this.host = new LocalJsonRpcHost();
         this.registerEvent(this.app.workspace.on("active-leaf-change", () => { }));
+        return Promise.resolve();
     }
 
     onunload(): void {

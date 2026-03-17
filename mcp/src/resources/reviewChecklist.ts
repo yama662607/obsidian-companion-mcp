@@ -10,7 +10,7 @@ export function registerReviewChecklistResource(server: McpServer): void {
             description: "Read-only checklist for runtime and MCP contract review",
             mimeType: "application/json",
         },
-        async (uri) => ({
+         (uri) => ({
             contents: [
                 {
                     uri: uri.toString(),

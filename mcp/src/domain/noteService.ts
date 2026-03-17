@@ -99,9 +99,9 @@ export class NoteService {
         }
     }
 
-    async refreshIndex(): Promise<{ totalFound: number; updatedCount: number }> {
+    refreshIndex(): Promise<{ totalFound: number; updatedCount: number }> {
         if (!this.semanticService) {
-            return { totalFound: 0, updatedCount: 0 };
+            return Promise.resolve({ totalFound: 0, updatedCount: 0 });
         }
 
         const notes = fallback.listNotes();
@@ -114,9 +114,9 @@ export class NoteService {
             }
         }
 
-        return {
+        return Promise.resolve({
             totalFound: notes.length,
             updatedCount,
-        };
+        });
     }
 }

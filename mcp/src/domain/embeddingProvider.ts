@@ -15,13 +15,15 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
 
     constructor() {
         const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
+        const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
         let modelDir: string;
 
         if (vaultPath) {
             // Store models inside the Obsidian vault plugin data directory
+            // Use configDir (e.g. .obsidian) to be compatible with user settings
             modelDir = path.join(
                 vaultPath,
-                ".obsidian",
+                configDir,
                 "plugins",
                 "companion-mcp",
                 "models"
@@ -44,7 +46,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
 
     private async getExtractor(): Promise<FeatureExtractionPipeline> {
         if (!this.extractor) {
-            this.extractor = await pipeline("feature-extraction", this.modelName);
+            this.extractor = (await pipeline("feature-extraction", this.modelName)) as FeatureExtractionPipeline;
         }
         return this.extractor;
     }
@@ -61,18 +63,22 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
             normalize: true,
         });
 
-        return Array.from(output.data);
+        // The output data is a Float32Array, convert it to a regular array
+        return Array.from(output.data as unknown as number[]);
     }
 }
 
 export class RemoteEmbeddingProvider implements EmbeddingProvider {
     public readonly kind = "remote" as const;
 
-    async embed(text: string, isQuery = false): Promise<number[]> {
-        // Fallback or future OpenAI implementation
+    /**
+     * Mock implementation for remote provider. 
+     * Removed 'async' if not using 'await', or use Promise.resolve.
+     */
+    embed(text: string, _isQuery = false): Promise<number[]> {
         const normalized = text.trim().toLowerCase();
         const score = normalized.length + 1;
-        return [score, score / 2, score / 4];
+        return Promise.resolve([score, score / 2, score / 4]);
     }
 }
 

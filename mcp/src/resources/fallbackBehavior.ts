@@ -10,7 +10,7 @@ export function registerFallbackBehaviorResource(server: McpServer): void {
             description: "Describes degraded-mode behavior when plugin is unavailable",
             mimeType: "application/json",
         },
-        async (uri) => ({
+         (uri) => ({
             contents: [
                 {
                     uri: uri.toString(),

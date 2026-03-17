@@ -12,7 +12,7 @@ export function registerCapabilityMatrixResource(server: McpServer): void {
             description: "Tool/Resource/Prompt classification matrix",
             mimeType: "application/json",
         },
-        async (uri) => ({
+         (uri) => ({
             contents: [
                 {
                     uri: uri.toString(),

@@ -10,7 +10,7 @@ export function registerSchemaSummaryResource(server: McpServer): void {
             description: "Summary of strict input schema policy for mcp tools",
             mimeType: "application/json",
         },
-        async (uri) => ({
+         (uri) => ({
             contents: [
                 {
                     uri: uri.toString(),

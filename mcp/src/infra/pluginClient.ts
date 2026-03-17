@@ -115,17 +115,17 @@ export class PluginClient {
         return response.result;
     }
 
-    private async mockResponse<TResult>(request: JsonRpcRequest<unknown>): Promise<JsonRpcResponse<TResult>> {
-        return {
+    private mockResponse<TResult>(request: JsonRpcRequest<unknown>): Promise<JsonRpcResponse<TResult>> {
+        return Promise.resolve({
             jsonrpc: "2.0",
             id: request.id,
             protocolVersion: PROTOCOL_VERSION,
             result: {} as TResult,
-        };
+        });
     }
 
-    private async performHandshake(): Promise<HandshakeResultWithVersion> {
-        return {
+    private performHandshake(): Promise<HandshakeResultWithVersion> {
+        return Promise.resolve({
             capabilities: [
                 "semantic.search",
                 "editor.getContext",
@@ -136,7 +136,7 @@ export class PluginClient {
             ],
             availability: "normal",
             protocolVersion: PROTOCOL_VERSION,
-        };
+        });
     }
 
     private transition(

@@ -105,16 +105,16 @@ var PluginClient = class {
     }
     return response.result;
   }
-  async mockResponse(request) {
-    return {
+  mockResponse(request) {
+    return Promise.resolve({
       jsonrpc: "2.0",
       id: request.id,
       protocolVersion: PROTOCOL_VERSION,
       result: {}
-    };
+    });
   }
-  async performHandshake() {
-    return {
+  performHandshake() {
+    return Promise.resolve({
       capabilities: [
         "semantic.search",
         "editor.getContext",
@@ -125,7 +125,7 @@ var PluginClient = class {
       ],
       availability: "normal",
       protocolVersion: PROTOCOL_VERSION
-    };
+    });
   }
   transition(availability, degradedReason, correlationId) {
     this.availability = availability;
@@ -245,11 +245,12 @@ var LocalEmbeddingProvider = class {
   modelName = "Xenova/multilingual-e5-small";
   constructor() {
     const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
+    const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
     let modelDir;
     if (vaultPath) {
       modelDir = path.join(
         vaultPath,
-        ".obsidian",
+        configDir,
         "plugins",
         "companion-mcp",
         "models"
@@ -286,10 +287,14 @@ var LocalEmbeddingProvider = class {
 };
 var RemoteEmbeddingProvider = class {
   kind = "remote";
-  async embed(text, isQuery = false) {
+  /**
+   * Mock implementation for remote provider. 
+   * Removed 'async' if not using 'await', or use Promise.resolve.
+   */
+  embed(text, _isQuery = false) {
     const normalized = text.trim().toLowerCase();
     const score = normalized.length + 1;
-    return [score, score / 2, score / 4];
+    return Promise.resolve([score, score / 2, score / 4]);
   }
 };
 function createEmbeddingProvider(preferRemote = false) {
@@ -684,9 +689,9 @@ var NoteService = class {
       };
     }
   }
-  async refreshIndex() {
+  refreshIndex() {
     if (!this.semanticService) {
-      return { totalFound: 0, updatedCount: 0 };
+      return Promise.resolve({ totalFound: 0, updatedCount: 0 });
     }
     const notes = listNotes();
     let updatedCount = 0;
@@ -696,24 +701,25 @@ var NoteService = class {
         updatedCount++;
       }
     }
-    return {
+    return Promise.resolve({
       totalFound: notes.length,
       updatedCount
-    };
+    });
   }
 };
 
 // src/infra/vectorStore.ts
-import fs3 from "fs";
+import { promises as fs3 } from "fs";
 import path3 from "path";
 var VectorStore = class {
   indexPath;
   constructor() {
     const vaultPath = process.env.OBSIDIAN_VAULT_PATH;
+    const configDir = process.env.OBSIDIAN_CONFIG_DIR || ".obsidian";
     if (vaultPath) {
       this.indexPath = path3.join(
         vaultPath,
-        ".obsidian",
+        configDir,
         "plugins",
         "companion-mcp",
         "data",
@@ -725,29 +731,29 @@ var VectorStore = class {
   }
   async load() {
     try {
-      if (!fs3.existsSync(this.indexPath)) {
+      try {
+        await fs3.access(this.indexPath);
+      } catch {
         return /* @__PURE__ */ new Map();
       }
-      const raw = fs3.readFileSync(this.indexPath, "utf-8");
+      const raw = await fs3.readFile(this.indexPath, "utf-8");
       const data = JSON.parse(raw);
       logInfo(`vector index loaded: ${data.length} notes from ${this.indexPath}`);
       return new Map(data);
     } catch (error) {
-      logError(`failed to load vector index: ${error}`);
+      logError(`failed to load vector index: ${String(error)}`);
       return /* @__PURE__ */ new Map();
     }
   }
   async save(notes) {
     try {
       const dir = path3.dirname(this.indexPath);
-      if (!fs3.existsSync(dir)) {
-        fs3.mkdirSync(dir, { recursive: true });
-      }
+      await fs3.mkdir(dir, { recursive: true });
       const data = Array.from(notes.entries());
-      fs3.writeFileSync(this.indexPath, JSON.stringify(data), "utf-8");
+      await fs3.writeFile(this.indexPath, JSON.stringify(data), "utf-8");
       logInfo(`vector index saved: ${notes.size} notes to ${this.indexPath}`);
     } catch (error) {
-      logError(`failed to save vector index: ${error}`);
+      logError(`failed to save vector index: ${String(error)}`);
     }
   }
   getIndexPath() {
@@ -1129,7 +1135,7 @@ function registerCapabilityMatrixResource(server) {
       description: "Tool/Resource/Prompt classification matrix",
       mimeType: "application/json"
     },
-    async (uri) => ({
+    (uri) => ({
       contents: [
         {
           uri: uri.toString(),
@@ -1159,7 +1165,7 @@ function registerSchemaSummaryResource(server) {
       description: "Summary of strict input schema policy for mcp tools",
       mimeType: "application/json"
     },
-    async (uri) => ({
+    (uri) => ({
       contents: [
         {
           uri: uri.toString(),
@@ -1192,7 +1198,7 @@ function registerFallbackBehaviorResource(server) {
       description: "Describes degraded-mode behavior when plugin is unavailable",
       mimeType: "application/json"
     },
-    async (uri) => ({
+    (uri) => ({
       contents: [
         {
           uri: uri.toString(),
@@ -1267,7 +1273,7 @@ function registerRuntimeStatusResource(server, pluginClient) {
       description: "MCP runtime availability, retries, and degraded reason",
       mimeType: "application/json"
     },
-    async (uri) => ({
+    (uri) => ({
       contents: [
         {
           uri: uri.toString(),
@@ -1289,7 +1295,7 @@ function registerReviewChecklistResource(server) {
       description: "Read-only checklist for runtime and MCP contract review",
       mimeType: "application/json"
     },
-    async (uri) => ({
+    (uri) => ({
       contents: [
         {
           uri: uri.toString(),
