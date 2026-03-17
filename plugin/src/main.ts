@@ -1,5 +1,5 @@
-import { Plugin, MarkdownView, type EditorPosition, PluginSettingTab, Setting, App } from "obsidian";
-import * as http from "http";
+import { Plugin, MarkdownView, type EditorPosition, PluginSettingTab, Setting, App, Notice } from "obsidian";
+const http = require("http");
 import {
     PROTOCOL_VERSION,
     type JsonRpcRequest,
@@ -12,7 +12,7 @@ interface CompanionSettings {
 }
 
 const DEFAULT_SETTINGS: CompanionSettings = {
-    port: 3031
+    port: 3033
 };
 
 interface InsertTextParams {
@@ -133,6 +133,7 @@ export default class ObsidianCompanionPlugin extends Plugin {
     private server: http.Server | null = null;
 
     async onload(): Promise<void> {
+        new Notice("Companion MCP: Plugin loading...");
         await this.loadSettings();
         this.host = new LocalJsonRpcHost(this);
         this.addSettingTab(new CompanionSettingTab(this.app, this));
@@ -158,36 +159,76 @@ export default class ObsidianCompanionPlugin extends Plugin {
     }
 
     private startServer(): void {
-        this.server = http.createServer((req, res) => {
-            // Only allow localhost
-            const remoteAddress = req.socket.remoteAddress;
-            if (remoteAddress !== "127.0.0.1" && remoteAddress !== "::1" && remoteAddress !== "::ffff:127.0.0.1") {
-                res.writeHead(403);
-                res.end("Forbidden: Localhost only");
-                return;
+        try {
+            if (this.server) {
+                this.server.close();
             }
 
-            if (req.method === "POST") {
-                let body = "";
-                req.on("data", chunk => { body += chunk; });
-                req.on("end", () => {
-                    try {
-                        const request = JSON.parse(body) as JsonRpcRequest<unknown>;
-                        const response = this.host?.handle(request);
-                        res.writeHead(200, { "Content-Type": "application/json" });
-                        res.end(JSON.stringify(response));
-                    } catch (e) {
-                        res.writeHead(400);
-                        res.end("Invalid JSON-RPC request");
-                    }
-                });
-            } else {
-                res.writeHead(405);
-                res.end("Method Not Allowed");
-            }
-        });
+            this.server = http.createServer((req: any, res: any) => {
+                // Set CORS headers
+                res.setHeader("Access-Control-Allow-Origin", "*");
+                res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+                res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-        this.server.listen(this.settings.port, "127.0.0.1");
+                // Handle preflight OPTIONS request
+                if (req.method === "OPTIONS") {
+                    res.writeHead(204);
+                    res.end();
+                    return;
+                }
+
+                // Security: Only allow localhost
+                const remoteAddress = req.socket.remoteAddress || "";
+                const hostHeader = req.headers.host || "";
+                const isLocal = 
+                    remoteAddress.includes("127.0.0.1") || 
+                    remoteAddress.includes("::1") || 
+                    remoteAddress.includes("localhost") ||
+                    hostHeader.includes("127.0.0.1") ||
+                    hostHeader.includes("localhost");
+
+                if (!isLocal) {
+                    console.warn(`Companion MCP: Rejected connection from ${remoteAddress}`);
+                    res.writeHead(403);
+                    res.end("Forbidden: Localhost only");
+                    return;
+                }
+
+                if (req.method === "POST") {
+                    let body = "";
+                    req.on("data", (chunk: any) => { body += chunk; });
+                    req.on("end", () => {
+                        try {
+                            const request = JSON.parse(body) as JsonRpcRequest<unknown>;
+                            const response = this.host?.handle(request);
+                            res.writeHead(200, { "Content-Type": "application/json" });
+                            res.end(JSON.stringify(response));
+                        } catch (e) {
+                            res.writeHead(400);
+                            res.end("Invalid JSON-RPC request");
+                        }
+                    });
+                } else {
+                    res.writeHead(405);
+                    res.end("Method Not Allowed");
+                }
+            });
+
+            this.server.on("error", (e: any) => {
+                console.error("Companion MCP server error:", e);
+                new Notice(`Companion MCP error: ${e.message}`);
+            });
+
+            // Listen on 0.0.0.0 to increase compatibility, but rely on remoteAddress check for security
+            this.server.listen(this.settings.port, "127.0.0.1", () => {
+                const msg = `Companion MCP server active on port ${this.settings.port}`;
+                console.log(msg);
+                new Notice(msg);
+            });
+        } catch (err) {
+            console.error("Fatal error starting Companion MCP server:", err);
+            new Notice(`Companion MCP failed: ${err.message}`);
+        }
     }
 
     private stopServer(): void {
@@ -218,7 +259,7 @@ class CompanionSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName("Port")
-            .setDesc("The port the local JSON-RPC server will listen on.")
+            .setDesc("The port the local JSON-RPC server will listen on. (Default: 3031)")
             .addText(text => text
                 .setPlaceholder("3031")
                 .setValue(this.plugin.settings.port.toString())

@@ -35,7 +35,7 @@ var PluginClient = class {
   constructor(maxRetries = 3, expectedProtocolVersion = PROTOCOL_VERSION) {
     this.maxRetries = maxRetries;
     this.expectedProtocolVersion = expectedProtocolVersion;
-    const port = process.env.OBSIDIAN_PLUGIN_PORT || "3031";
+    const port = process.env.OBSIDIAN_PLUGIN_PORT || "3033";
     this.pluginUrl = `http://127.0.0.1:${port}`;
     this.configDir = process.env.OBSIDIAN_CONFIG_DIR || null;
   }
