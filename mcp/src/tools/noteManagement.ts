@@ -16,13 +16,13 @@ export function registerNoteTool(server: McpServer, noteService: NoteService): v
     server.registerTool(
         TOOL_NAMES.REFRESH_SEMANTIC_INDEX,
         {
-            description: "Scan all markdown files in the vault and update the semantic index. (Vault内の全ファイルをスキャンし、セマンティックインデックスを更新します)",
+            description: "Scan all markdown files in the vault and update the semantic index.",
             inputSchema: refreshSemanticIndexInputSchema,
         },
         async () => {
             try {
                 const stats = await noteService.refreshIndex();
-                const summary = `Scan complete. Found ${stats.totalFound} notes, queued ${stats.updatedCount} for indexing. (スキャン完了。${stats.totalFound}件のノートを検出し、${stats.updatedCount}件をインデックス待ちに追加しました)`;
+                const summary = `Scan complete. Found ${stats.totalFound} notes, queued ${stats.updatedCount} for indexing.`;
                 return okResult(summary, stats);
             } catch (error) {
                 const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "refresh index failed");

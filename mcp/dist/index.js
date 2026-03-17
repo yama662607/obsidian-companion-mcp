@@ -834,7 +834,7 @@ function registerSemanticSearchTool(server, semanticService) {
         if (result.matches.length > 0) {
           summary = `Found ${result.matches.length} matches`;
         } else if (result.indexStatus.isEmpty) {
-          instructions = "Vault has not been indexed yet. Please run 'refresh_semantic_index' tool to create the initial index. (Vault\u304C\u307E\u3060\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002'refresh_semantic_index' \u30C4\u30FC\u30EB\u3092\u5B9F\u884C\u3057\u3066\u521D\u671F\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3092\u4F5C\u6210\u3057\u3066\u304F\u3060\u3055\u3044)";
+          instructions = "Vault has not been indexed yet. Please run 'refresh_semantic_index' tool to create the initial index.";
           summary = instructions;
         } else if (result.indexStatus.ready) {
           summary = "No semantic matches found";
@@ -991,13 +991,13 @@ function registerNoteTool(server, noteService) {
   server.registerTool(
     TOOL_NAMES.REFRESH_SEMANTIC_INDEX,
     {
-      description: "Scan all markdown files in the vault and update the semantic index. (Vault\u5185\u306E\u5168\u30D5\u30A1\u30A4\u30EB\u3092\u30B9\u30AD\u30E3\u30F3\u3057\u3001\u30BB\u30DE\u30F3\u30C6\u30A3\u30C3\u30AF\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3092\u66F4\u65B0\u3057\u307E\u3059)",
+      description: "Scan all markdown files in the vault and update the semantic index.",
       inputSchema: refreshSemanticIndexInputSchema
     },
     async () => {
       try {
         const stats = await noteService.refreshIndex();
-        const summary = `Scan complete. Found ${stats.totalFound} notes, queued ${stats.updatedCount} for indexing. (\u30B9\u30AD\u30E3\u30F3\u5B8C\u4E86\u3002${stats.totalFound}\u4EF6\u306E\u30CE\u30FC\u30C8\u3092\u691C\u51FA\u3057\u3001${stats.updatedCount}\u4EF6\u3092\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u5F85\u3061\u306B\u8FFD\u52A0\u3057\u307E\u3057\u305F)`;
+        const summary = `Scan complete. Found ${stats.totalFound} notes, queued ${stats.updatedCount} for indexing.`;
         return okResult(summary, stats);
       } catch (error) {
         const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "refresh index failed");

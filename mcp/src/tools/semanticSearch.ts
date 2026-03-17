@@ -27,7 +27,7 @@ export function registerSemanticSearchTool(server: McpServer, semanticService: S
                 if (result.matches.length > 0) {
                     summary = `Found ${result.matches.length} matches`;
                 } else if (result.indexStatus.isEmpty) {
-                    instructions = "Vault has not been indexed yet. Please run 'refresh_semantic_index' tool to create the initial index. (Vaultがまだインデックスされていません。'refresh_semantic_index' ツールを実行して初期インデックスを作成してください)";
+                    instructions = "Vault has not been indexed yet. Please run 'refresh_semantic_index' tool to create the initial index.";
                     summary = instructions;
                 } else if (result.indexStatus.ready) {
                     summary = "No semantic matches found";
