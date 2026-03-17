@@ -34,7 +34,7 @@ just plugin-install-local /absolute/path/to/YourVault
 
 1. Settings -> Community plugins を開く
 2. Community plugins が無効なら有効化
-3. obsidian-companion-mcp がインストール一覧にあり、有効化できる
+3. companion-mcp がインストール一覧にあり、有効化できる
 4. 有効化して Obsidian を再起動する
 5. 期待動作を確認する
    - 起動時エラーが出ない

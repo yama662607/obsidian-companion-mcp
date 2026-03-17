@@ -4,15 +4,15 @@ Use this when opening a PR to obsidianmd/obsidian-releases.
 
 ## Title
 
-Add obsidian-companion-mcp community plugin
+Add companion-mcp community plugin
 
 ## Body
 
-This PR adds Obsidian Companion MCP to community-plugins.json.
+This PR adds Companion MCP to community-plugins.json.
 
 Checklist:
 
-- Plugin id in manifest.json: obsidian-companion-mcp
+- Plugin id in manifest.json: companion-mcp
 - Repository: https://github.com/yama662607/obsidian-companion-mcp
 - Latest release assets attached:
   - main.js
@@ -25,8 +25,8 @@ Entry:
 
 ```json
 {
-  "id": "obsidian-companion-mcp",
-  "name": "Obsidian Companion MCP",
+  "id": "companion-mcp",
+  "name": "Companion MCP",
   "author": "Daisuke Yamashiki",
   "description": "Enables AI agents to use MCP tools for semantic vault search and editor actions via the companion MCP server.",
   "repo": "yama662607/obsidian-companion-mcp"

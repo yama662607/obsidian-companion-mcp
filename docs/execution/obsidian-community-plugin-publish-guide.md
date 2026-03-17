@@ -82,8 +82,8 @@ community-plugins.json に次の形式で追加提案する:
 
 ```json
 {
-  "id": "obsidian-companion-mcp",
-  "name": "Obsidian Companion MCP",
+  "id": "companion-mcp",
+  "name": "Companion MCP",
   "author": "Daisuke Yamashiki",
   "description": "Enables AI agents to use MCP tools for semantic vault search and editor actions via the companion MCP server.",
   "repo": "yama662607/obsidian-companion-mcp"
