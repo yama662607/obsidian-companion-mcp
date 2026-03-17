@@ -4,7 +4,7 @@
   "version": "0.1.3",
   "minAppVersion": "1.5.0",
   "description": "Enables AI agents to use MCP tools for semantic vault search and editor actions via the companion MCP server.",
-  "author": "Daisuke Yamashiki",
+  "author": "yama662607",
   "authorUrl": "https://github.com/yama662607",
   "isDesktopOnly": true
 }
