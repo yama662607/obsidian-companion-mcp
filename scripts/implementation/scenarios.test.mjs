@@ -127,6 +127,14 @@ test("plugin note operations normalize ENOENT to NOT_FOUND", () => {
     assert.match(pluginSource, /error\.code === "ENOENT"/);
 });
 
+test("implementation e2e defaults to isolated plugin transport", () => {
+    const source = read("scripts/implementation/mcp-runtime.e2e.test.mjs");
+
+    assert.match(source, /OBSIDIAN_PLUGIN_PORT: "1"/);
+    assert.match(source, /do not talk to a real Obsidian plugin unless a test opts in/);
+    assert.match(source, /envOverrides:/);
+});
+
 test("fallback storage is anchored to OBSIDIAN_VAULT_PATH", () => {
     const source = read("mcp/src/infra/fallbackStorage.ts");
     assert.match(source, /OBSIDIAN_VAULT_PATH/);

@@ -141,7 +141,11 @@ test("mcp e2e: refactored tool surface is discoverable", async (t) => {
 
 test("mcp e2e: note, metadata, and semantic flow behaves consistently", async (t) => {
     resetE2EVault();
-    const session = await createMcpClient();
+    const session = await createMcpClient({
+        envOverrides: {
+            USE_REMOTE_EMBEDDING: "true",
+        },
+    });
     t.after(async () => {
         await session.close();
     });
@@ -284,6 +288,122 @@ test("mcp e2e: get_note preserves array metadata types", async (t) => {
     const saved = fs.readFileSync(path.join(e2eVaultRoot, pathArg), "utf8");
     assert.match(saved, /tags:\s*\n  - a\n  - b/);
     assert.match(saved, /nums:\s*\n  - 1\n  - 2/);
+});
+
+test("mcp e2e: update_note_content preserves existing metadata when body changes", async (t) => {
+    resetE2EVault();
+    const session = await createMcpClient();
+    t.after(async () => {
+        await session.close();
+    });
+
+    const pathArg = "e2e/preserve-metadata.md";
+
+    const created = await session.client.callTool({
+        name: "create_note",
+        arguments: {
+            path: pathArg,
+            content: "# Original Body\n\nbefore",
+        },
+    });
+    assert.ok(!created.isError);
+
+    const updatedMetadata = await session.client.callTool({
+        name: "update_note_metadata",
+        arguments: {
+            path: pathArg,
+            metadata: {
+                tags: ["keep", "me"],
+                status: "draft",
+            },
+        },
+    });
+    assert.ok(!updatedMetadata.isError);
+
+    const updatedContent = await session.client.callTool({
+        name: "update_note_content",
+        arguments: {
+            path: pathArg,
+            content: "# Updated Body\n\nafter",
+        },
+    });
+    assert.ok(!updatedContent.isError);
+
+    const readBack = await session.client.callTool({
+        name: "get_note",
+        arguments: { path: pathArg },
+    });
+    assert.ok(!readBack.isError);
+    assert.deepEqual(readBack.structuredContent.metadata.tags, ["keep", "me"]);
+    assert.equal(readBack.structuredContent.metadata.status, "draft");
+    assert.match(readBack.structuredContent.content, /tags:\s*\n  - keep\n  - me/);
+    assert.match(readBack.structuredContent.content, /status:\s*draft/);
+    assert.match(readBack.structuredContent.content, /# Updated Body/);
+});
+
+test("mcp e2e: note operations reject vault-escaping paths", async (t) => {
+    resetE2EVault();
+    const session = await createMcpClient();
+    t.after(async () => {
+        await session.close();
+    });
+
+    const attempts = await Promise.all([
+        session.client.callTool({
+            name: "create_note",
+            arguments: { path: "../escape.md", content: "x" },
+        }),
+        session.client.callTool({
+            name: "get_note",
+            arguments: { path: "/tmp/escape.md" },
+        }),
+        session.client.callTool({
+            name: "delete_note",
+            arguments: { path: "../escape.md" },
+        }),
+    ]);
+
+    for (const result of attempts) {
+        assert.equal(result.isError, true);
+        assert.equal(result.structuredContent.code, "VALIDATION");
+        assert.ok(/Invalid vault-relative path|Path escapes vault root/.test(result.structuredContent.message));
+    }
+});
+
+test("mcp e2e: refresh_semantic_index skips hidden directories", async (t) => {
+    resetE2EVault();
+    fs.mkdirSync(path.join(e2eVaultRoot, "visible"), { recursive: true });
+    fs.mkdirSync(path.join(e2eVaultRoot, ".hidden"), { recursive: true });
+    fs.writeFileSync(path.join(e2eVaultRoot, "visible", "note.md"), "# Visible\n\nsemantic target", "utf8");
+    fs.writeFileSync(path.join(e2eVaultRoot, ".hidden", "secret.md"), "# Hidden\n\nshould be ignored", "utf8");
+
+    const session = await createMcpClient({
+        envOverrides: {
+            USE_REMOTE_EMBEDDING: "true",
+        },
+    });
+    t.after(async () => {
+        await session.close();
+    });
+
+    const refreshed = await session.client.callTool({
+        name: "refresh_semantic_index",
+        arguments: {},
+    });
+    assert.ok(!refreshed.isError);
+    assert.equal(refreshed.structuredContent.totalFound, 1);
+    assert.equal(refreshed.structuredContent.updatedCount, 1);
+
+    const searched = await session.client.callTool({
+        name: "search_notes_semantic",
+        arguments: {
+            query: "semantic target",
+            limit: 5,
+        },
+    });
+    assert.ok(!searched.isError);
+    assert.ok(searched.structuredContent.matches.some((match) => match.path === "visible/note.md"));
+    assert.ok(!searched.structuredContent.matches.some((match) => match.path.includes(".hidden")));
 });
 
 test("mcp e2e: startup can discover vault path from plugin handshake", async (t) => {
