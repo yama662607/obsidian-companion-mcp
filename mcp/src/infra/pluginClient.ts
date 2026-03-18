@@ -1,3 +1,5 @@
+import http from "node:http";
+import https from "node:https";
 import {
     PROTOCOL_VERSION,
     isJsonRpcFailure,
@@ -128,17 +130,7 @@ export class PluginClient {
         };
 
         try {
-            const response = await fetch(this.pluginUrl, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(request),
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const json = (await response.json()) as JsonRpcResponse<TResult>;
+            const json = await this.postJson<TResult>(request);
             if (isJsonRpcFailure(json)) {
                 this.transition("normal", null, null);
                 throw new DomainError(
@@ -168,22 +160,54 @@ export class PluginClient {
             protocolVersion: PROTOCOL_VERSION,
         };
 
-        const response = await fetch(this.pluginUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(request),
-        });
-
-        if (!response.ok) {
-            throw new Error(`Handshake failed! status: ${response.status}`);
-        }
-
-        const json = (await response.json()) as JsonRpcResponse<HandshakeResult & { protocolVersion?: string }>;
+        const json = await this.postJson<HandshakeResult & { protocolVersion?: string }>(request);
         if (isJsonRpcFailure(json)) {
             throw new Error(json.error.message);
         }
 
         return json.result;
+    }
+
+    private async postJson<TResult>(request: JsonRpcRequest<unknown>): Promise<JsonRpcResponse<TResult>> {
+        const url = new URL(this.pluginUrl);
+        const transport = url.protocol === "https:" ? https : http;
+
+        return new Promise((resolve, reject) => {
+            const payload = JSON.stringify(request);
+            const httpRequest = transport.request(
+                url,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Content-Length": Buffer.byteLength(payload),
+                    },
+                },
+                (response) => {
+                    const chunks: Buffer[] = [];
+                    response.on("data", (chunk) => {
+                        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+                    });
+                    response.on("end", () => {
+                        const rawBody = Buffer.concat(chunks).toString("utf8");
+                        if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
+                            reject(new Error(`HTTP error! status: ${response.statusCode ?? "unknown"}`));
+                            return;
+                        }
+
+                        try {
+                            resolve(JSON.parse(rawBody) as JsonRpcResponse<TResult>);
+                        } catch (error) {
+                            reject(error);
+                        }
+                    });
+                },
+            );
+
+            httpRequest.on("error", reject);
+            httpRequest.write(payload);
+            httpRequest.end();
+        });
     }
 
     private transition(

@@ -95,6 +95,30 @@ test("plugin metadata updates use shared frontmatter rendering", () => {
     assert.doesNotMatch(source, /JSON\.stringify\(v\)/);
 });
 
+test("review-bot compatibility avoids fetch, console.log, and hardcoded config dir", () => {
+    const pluginClient = read("mcp/src/infra/pluginClient.ts");
+    const pluginSource = read("plugin/src/main.ts");
+    const serverSource = read("mcp/src/server.ts");
+    const providerSource = read("mcp/src/domain/embeddingProvider.ts");
+
+    assert.doesNotMatch(pluginClient, /fetch\(/);
+    assert.match(pluginClient, /postJson/);
+    assert.doesNotMatch(pluginSource, /console\.log/);
+    assert.match(pluginSource, /console\.debug/);
+    assert.doesNotMatch(serverSource, /"\.obsidian"/);
+    assert.doesNotMatch(providerSource, /"\.obsidian"/);
+});
+
+test("prompt registrations avoid unnecessary async wrappers", () => {
+    const searchPrompt = read("mcp/src/prompts/searchThenInsert.ts");
+    const rewritePrompt = read("mcp/src/prompts/contextRewrite.ts");
+    const reviewPrompt = read("mcp/src/prompts/agentRuntimeReview.ts");
+
+    assert.doesNotMatch(searchPrompt, /async \(args\) =>/);
+    assert.doesNotMatch(rewritePrompt, /async \(args\) =>/);
+    assert.doesNotMatch(reviewPrompt, /async \(args\) =>/);
+});
+
 test("fallback storage is anchored to OBSIDIAN_VAULT_PATH", () => {
     const source = read("mcp/src/infra/fallbackStorage.ts");
     assert.match(source, /OBSIDIAN_VAULT_PATH/);

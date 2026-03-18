@@ -72,7 +72,7 @@ export class SemanticService {
             running: this.queue.isRunning(),
             ready: pendingCount === 0,
             isEmpty: indexedCount === 0,
-            modelReady: !!(this.provider as any).extractor || this.provider.kind === "remote",
+            modelReady: this.provider.getRuntimeState().modelReady,
         };
     }
 

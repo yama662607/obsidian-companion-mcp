@@ -13,7 +13,7 @@ export function registerContextRewritePrompt(server: McpServer): void {
                 style: z.string().min(1).optional(),
             },
         },
-        async (args) => {
+        (args) => {
             const style = typeof args.style === "string" && args.style.trim().length > 0
                 ? args.style
                 : "keep original tone";

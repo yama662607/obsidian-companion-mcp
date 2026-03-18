@@ -13,7 +13,7 @@ export function registerSearchThenInsertPrompt(server: McpServer): void {
                 query: z.string().min(1),
             },
         },
-        async (args) => ({
+        (args) => ({
             messages: [
                 {
                     role: "user",

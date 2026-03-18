@@ -20,6 +20,7 @@ import { registerAgentRuntimeReviewPrompt } from "./prompts/agentRuntimeReview";
 import { logError, logInfo } from "./infra/logger";
 import { DomainError } from "./domain/errors";
 import type { HandshakeResult } from "./contracts/protocol";
+import { discoverVaultConfigDir } from "./infra/configDir";
 
 export interface ServerRuntime {
     server: McpServer;
@@ -91,14 +92,14 @@ async function resolveRuntimePaths(pluginClient: PluginClient): Promise<{
         );
     }
 
-    const configDir = envConfigDir ?? handshake?.configDir ?? ".obsidian";
+    const configDir = envConfigDir ?? handshake?.configDir ?? pluginClient.getConfigDir() ?? discoverVaultConfigDir(vaultPath) ?? "";
 
     if (!process.env.OBSIDIAN_VAULT_PATH) {
         process.env.OBSIDIAN_VAULT_PATH = vaultPath;
         logInfo(`applying dynamic configuration: vaultPath=${vaultPath}`);
     }
 
-    if (!process.env.OBSIDIAN_CONFIG_DIR) {
+    if (configDir && !process.env.OBSIDIAN_CONFIG_DIR) {
         process.env.OBSIDIAN_CONFIG_DIR = configDir;
         logInfo(`applying dynamic configuration: configDir=${configDir}`);
     }

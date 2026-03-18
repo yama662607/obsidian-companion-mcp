@@ -231,7 +231,7 @@ class LocalJsonRpcHost {
 
             // Debug logging
             const lines = content.split("\n");
-            console.log("[replaceRange DEBUG]", {
+            console.debug("[replaceRange DEBUG]", {
                 from: payload.range.from,
                 to: payload.range.to,
                 text: payload.text,
@@ -309,17 +309,17 @@ class LocalJsonRpcHost {
 export default class ObsidianCompanionPlugin extends Plugin {
     settings: CompanionSettings = DEFAULT_SETTINGS;
     private host: LocalJsonRpcHost | null = null;
-    private server: http.Server | null = null;
+    private server: ReturnType<typeof http.createServer> | null = null;
     private statusBarElement: HTMLElement | null = null;
 
     async onload(): Promise<void> {
-        console.log("Companion MCP: Plugin loading...");
+        console.debug("Companion MCP: plugin loading");
 
         await this.loadSettings();
 
         // Validate settings
         if (!this.isValidPort(this.settings.port)) {
-            new Notice("Companion MCP: Invalid port in settings, using default");
+            new Notice("Companion MCP: invalid port in settings, using default");
             this.settings.port = DEFAULT_SETTINGS.port;
             await this.saveSettings();
         }
@@ -336,7 +336,7 @@ export default class ObsidianCompanionPlugin extends Plugin {
             this.startServer();
         });
 
-        console.log(`Companion MCP: Plugin loaded, will start server on port ${this.settings.port}`);
+        console.debug(`Companion MCP: plugin loaded, will start server on port ${this.settings.port}`);
     }
 
     onunload(): void {
@@ -348,7 +348,7 @@ export default class ObsidianCompanionPlugin extends Plugin {
             this.statusBarElement = null;
         }
 
-        console.log("Companion MCP: Plugin unloaded");
+        console.debug("Companion MCP: plugin unloaded");
     }
 
     async loadSettings(): Promise<void> {
@@ -359,7 +359,7 @@ export default class ObsidianCompanionPlugin extends Plugin {
     async saveSettings(): Promise<void> {
         // Validate before saving
         if (!this.isValidPort(this.settings.port)) {
-            new Notice("Companion MCP: Invalid port number");
+            new Notice("Companion MCP: invalid port number");
             return;
         }
 
@@ -377,7 +377,7 @@ export default class ObsidianCompanionPlugin extends Plugin {
 
     public updateStatusBar(): void {
         if (this.statusBarElement) {
-            this.statusBarElement.setText(`Companion MCP: ${this.settings.port}`);
+            this.statusBarElement.setText(`Companion MCP: port ${this.settings.port}`);
         }
     }
 
@@ -391,7 +391,7 @@ export default class ObsidianCompanionPlugin extends Plugin {
 
     private startServer(): void {
         if (!this.settings.port || !this.isValidPort(this.settings.port)) {
-            new Notice("Companion MCP: Invalid port, cannot start server");
+            new Notice("Companion MCP: invalid port, cannot start server");
             return;
         }
 
@@ -402,7 +402,7 @@ export default class ObsidianCompanionPlugin extends Plugin {
             }
 
             this.server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
-                this.handleRequest(req, res);
+                void this.handleRequest(req, res);
             });
 
             this.server.on("error", (error: Error) => {
@@ -410,8 +410,8 @@ export default class ObsidianCompanionPlugin extends Plugin {
             });
 
             this.server.listen(this.settings.port, "127.0.0.1", () => {
-                const msg = `Companion MCP: Server active on port ${this.settings.port}`;
-                console.log(msg);
+                const msg = `Companion MCP: server active on port ${this.settings.port}`;
+                console.debug(msg);
                 new Notice(msg);
             });
         } catch (error) {
@@ -455,7 +455,7 @@ export default class ObsidianCompanionPlugin extends Plugin {
                 res.writeHead(200, { "Content-Type": "application/json" });
                 res.end(JSON.stringify(response));
             } catch (error) {
-                console.error("Companion MCP: Request handling error:", error);
+                console.error("Companion MCP: request handling error", error);
                 res.writeHead(400);
                 res.end("Invalid JSON-RPC request");
             }
@@ -467,14 +467,14 @@ export default class ObsidianCompanionPlugin extends Plugin {
 
     private handleServerError(error: unknown): void {
         const message = error instanceof Error ? error.message : String(error);
-        console.error("Companion MCP: Server error:", error);
+        console.error("Companion MCP: server error", error);
         new Notice(`Companion MCP error: ${message}`);
     }
 
     private stopServer(): void {
         if (this.server) {
             this.server.close(() => {
-                console.log("Companion MCP: Server stopped");
+                console.debug("Companion MCP: server stopped");
             });
             this.server = null;
         }
@@ -517,7 +517,9 @@ class CompanionSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        containerEl.createEl("h2", { text: "Companion MCP Settings" });
+        new Setting(containerEl)
+            .setName("Companion MCP settings")
+            .setHeading();
 
         new Setting(containerEl)
             .setName("Server port")
@@ -542,7 +544,7 @@ class CompanionSettingTab extends PluginSettingTab {
                 .setButtonText("Restart server")
                 .onClick(() => {
                     this.plugin.restartServer();
-                    new Notice("Companion MCP: Server restarted");
+                    new Notice("Companion MCP: server restarted");
                 }));
 
         containerEl.createEl("p", {

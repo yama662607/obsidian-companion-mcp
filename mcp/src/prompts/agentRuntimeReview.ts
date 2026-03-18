@@ -13,7 +13,7 @@ export function registerAgentRuntimeReviewPrompt(server: McpServer): void {
                 severityThreshold: z.enum(["high", "medium", "low"]).default("medium"),
             },
         },
-        async (args) => ({
+        (args) => ({
             messages: [
                 {
                     role: "user",

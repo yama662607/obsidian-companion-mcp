@@ -1,18 +1,28 @@
-import { pipeline, env, type FeatureExtractionPipeline } from "@xenova/transformers";
+import { pipeline, env } from "@xenova/transformers";
 import path from "node:path";
-import os from "node:os";
 import fs from "node:fs";
+import { discoverVaultConfigDir, resolvePluginStoragePath } from "../infra/configDir";
+
+type ExtractorResult = {
+    data: ArrayLike<number>;
+};
+
+type FeatureExtractor = (
+    text: string,
+    options: { pooling: "mean"; normalize: true },
+) => Promise<ExtractorResult>;
 
 export interface EmbeddingProvider {
     embed(text: string, isQuery?: boolean): Promise<number[]>;
     prepare(): Promise<void>;
     isReady(): Promise<boolean>;
+    getRuntimeState(): { modelReady: boolean };
     kind: "local" | "remote";
 }
 
 export class LocalEmbeddingProvider implements EmbeddingProvider {
     public readonly kind = "local" as const;
-    private extractor: FeatureExtractionPipeline | null = null;
+    private extractor: FeatureExtractor | null = null;
     private modelName = "Xenova/multilingual-e5-small";
     private modelDir: string;
     private vaultPath: string;
@@ -21,7 +31,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
     constructor(vaultPath: string, configDir: string) {
         this.vaultPath = vaultPath;
         this.configDir = configDir;
-        this.modelDir = path.join(vaultPath, configDir, "plugins", "companion-mcp", "models");
+        this.modelDir = resolvePluginStoragePath(vaultPath, configDir, "models");
         this.applyModelPath();
     }
 
@@ -31,7 +41,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
     public updateModelPath(vaultPath: string, configDir: string): void {
         this.vaultPath = vaultPath;
         this.configDir = configDir;
-        this.modelDir = path.join(vaultPath, configDir, "plugins", "companion-mcp", "models");
+        this.modelDir = resolvePluginStoragePath(vaultPath, configDir, "models");
         this.applyModelPath();
     }
 
@@ -59,13 +69,19 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
         }
     }
 
+    getRuntimeState(): { modelReady: boolean } {
+        return {
+            modelReady: this.extractor !== null || fs.existsSync(path.join(this.modelDir, this.modelName)),
+        };
+    }
+
     async prepare(): Promise<void> {
         if (this.extractor) return;
 
         try {
             // Temporarily allow remote models during explicit preparation/download
             env.allowRemoteModels = true;
-            this.extractor = (await pipeline("feature-extraction", this.modelName)) as FeatureExtractionPipeline;
+            this.extractor = (await pipeline("feature-extraction", this.modelName)) as unknown as FeatureExtractor;
             env.allowRemoteModels = false;
         } catch (error) {
             env.allowRemoteModels = false;
@@ -73,11 +89,11 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
         }
     }
 
-    private async getExtractor(): Promise<FeatureExtractionPipeline> {
+    private async getExtractor(): Promise<FeatureExtractor> {
         if (!this.extractor) {
             // Try to load from local only
             try {
-                this.extractor = (await pipeline("feature-extraction", this.modelName)) as FeatureExtractionPipeline;
+                this.extractor = (await pipeline("feature-extraction", this.modelName)) as unknown as FeatureExtractor;
             } catch (error) {
                 throw new Error(`Model not found locally. Please run 'refresh_semantic_index' to download models. (Details: ${String(error)})`);
             }
@@ -103,12 +119,16 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
 export class RemoteEmbeddingProvider implements EmbeddingProvider {
     public readonly kind = "remote" as const;
 
-    async isReady(): Promise<boolean> {
-        return true;
+    isReady(): Promise<boolean> {
+        return Promise.resolve(true);
     }
 
-    async prepare(): Promise<void> {
-        // No-op for remote
+    prepare(): Promise<void> {
+        return Promise.resolve();
+    }
+
+    getRuntimeState(): { modelReady: boolean } {
+        return { modelReady: true };
     }
 
     embed(text: string, _isQuery = false): Promise<number[]> {
@@ -126,8 +146,8 @@ export function createEmbeddingProvider(
     if (preferRemote) {
         return new RemoteEmbeddingProvider();
     }
-    // Use dummy paths if not provided yet (will be updated after plugin handshake)
+
     const effectiveVaultPath = vaultPath || "/tmp";
-    const effectiveConfigDir = configDir || ".obsidian";
+    const effectiveConfigDir = configDir || process.env.OBSIDIAN_CONFIG_DIR || discoverVaultConfigDir(effectiveVaultPath) || "";
     return new LocalEmbeddingProvider(effectiveVaultPath, effectiveConfigDir);
 }
