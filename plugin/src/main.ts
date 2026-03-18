@@ -54,6 +54,10 @@ interface MetadataUpdateParams {
     metadata: Record<string, unknown>;
 }
 
+function isMissingVaultFileError(error: unknown): boolean {
+    return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
 class LocalJsonRpcHost {
     constructor(private plugin: ObsidianCompanionPlugin) {}
 
@@ -153,8 +157,17 @@ class LocalJsonRpcHost {
             return this.errorResponse(id, "NOT_FOUND", `Note not found: ${params.path}`);
         }
 
-        // Use cachedRead for better performance
-        const content = await this.plugin.app.vault.cachedRead(file);
+        let content: string;
+        try {
+            // Use cachedRead for better performance
+            content = await this.plugin.app.vault.cachedRead(file);
+        } catch (error) {
+            if (isMissingVaultFileError(error)) {
+                return this.errorResponse(id, "NOT_FOUND", `Note not found: ${params.path}`);
+            }
+            throw error;
+        }
+
         return {
             jsonrpc: "2.0",
             id,
@@ -173,7 +186,15 @@ class LocalJsonRpcHost {
             return this.errorResponse(id, "NOT_FOUND", `Note not found: ${params.path}`);
         }
 
-        await this.plugin.app.vault.delete(file);
+        try {
+            await this.plugin.app.vault.delete(file);
+        } catch (error) {
+            if (isMissingVaultFileError(error)) {
+                return this.errorResponse(id, "NOT_FOUND", `Note not found: ${params.path}`);
+            }
+            throw error;
+        }
+
         return {
             jsonrpc: "2.0",
             id,
@@ -195,10 +216,26 @@ class LocalJsonRpcHost {
             return this.errorResponse(id, "NOT_FOUND", `Note not found: ${params.path}`);
         }
 
-        // Use cachedRead for better performance
-        const content = await this.plugin.app.vault.cachedRead(file);
+        let content: string;
+        try {
+            // Use cachedRead for better performance
+            content = await this.plugin.app.vault.cachedRead(file);
+        } catch (error) {
+            if (isMissingVaultFileError(error)) {
+                return this.errorResponse(id, "NOT_FOUND", `Note not found: ${params.path}`);
+            }
+            throw error;
+        }
+
         const newContent = this.updateFrontmatter(content, params.metadata);
-        await this.plugin.app.vault.modify(file, newContent);
+        try {
+            await this.plugin.app.vault.modify(file, newContent);
+        } catch (error) {
+            if (isMissingVaultFileError(error)) {
+                return this.errorResponse(id, "NOT_FOUND", `Note not found: ${params.path}`);
+            }
+            throw error;
+        }
 
         return {
             jsonrpc: "2.0",

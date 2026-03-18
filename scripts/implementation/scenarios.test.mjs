@@ -119,6 +119,14 @@ test("prompt registrations avoid unnecessary async wrappers", () => {
     assert.doesNotMatch(reviewPrompt, /async \(args\) =>/);
 });
 
+test("plugin note operations normalize ENOENT to NOT_FOUND", () => {
+    const pluginSource = read("plugin/src/main.ts");
+
+    assert.match(pluginSource, /isMissingVaultFileError/);
+    assert.match(pluginSource, /errorResponse\(id, "NOT_FOUND", `Note not found: \$\{params\.path\}`\)/);
+    assert.match(pluginSource, /error\.code === "ENOENT"/);
+});
+
 test("fallback storage is anchored to OBSIDIAN_VAULT_PATH", () => {
     const source = read("mcp/src/infra/fallbackStorage.ts");
     assert.match(source, /OBSIDIAN_VAULT_PATH/);

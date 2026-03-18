@@ -1,7 +1,7 @@
 {
   "id": "companion-mcp",
   "name": "Companion MCP",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "minAppVersion": "0.15.0",
 
   "description": "Enables AI agents to use MCP tools for semantic vault search and editor actions via the companion MCP server.",
