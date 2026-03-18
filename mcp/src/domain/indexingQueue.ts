@@ -16,6 +16,10 @@ export class IndexingQueue {
         return this.running;
     }
 
+    getPendingSample(limit: number): string[] {
+        return this.queue.slice(0, Math.max(limit, 0)).map((job) => job.path);
+    }
+
     enqueue(job: IndexJob): boolean {
         const existingIndex = this.queue.findIndex((item) => item.path === job.path);
         if (existingIndex !== -1) {
@@ -27,6 +31,25 @@ export class IndexingQueue {
 
         this.queue.push(job);
         return true;
+    }
+
+    renamePath(from: string, to: string): void {
+        const existingIndex = this.queue.findIndex((item) => item.path === from);
+        if (existingIndex === -1) {
+            return;
+        }
+
+        this.queue[existingIndex] = {
+            ...this.queue[existingIndex],
+            path: to,
+        };
+    }
+
+    removePath(path: string): void {
+        const existingIndex = this.queue.findIndex((item) => item.path === path);
+        if (existingIndex !== -1) {
+            this.queue.splice(existingIndex, 1);
+        }
     }
 
     async process(handler: (job: IndexJob) => Promise<void>, maxItems = 25): Promise<number> {

@@ -59,6 +59,7 @@ test("semantic search returns deterministic structured shape", () => {
     assert.match(source, /TOOL_NAMES\.SEARCH_NOTES_SEMANTIC/);
     assert.match(source, /matches/);
     assert.match(source, /indexStatus/);
+    assert.match(source, /get_note/);
     assert.match(source, /Index not ready|No semantic matches found|Index is empty/);
 });
 
@@ -193,5 +194,42 @@ test("tool and resource names are centrally managed", () => {
     assert.match(rewritePrompt, /TOOL_NAMES/);
     assert.match(uris, /runtime:\/\/status/);
     assert.match(names, /search_notes_semantic/);
+    assert.match(names, /list_notes/);
+    assert.match(names, /move_note/);
+    assert.match(names, /get_index_status/);
     assert.match(prompts, /workflow_context_rewrite/);
+});
+
+test("note discovery tools use bounded schemas and intent-aligned annotations", () => {
+    const source = read("mcp/src/tools/noteManagement.ts");
+    assert.match(source, /TOOL_NAMES\.LIST_NOTES/);
+    assert.match(source, /TOOL_NAMES\.MOVE_NOTE/);
+    assert.match(source, /TOOL_NAMES\.GET_INDEX_STATUS/);
+    assert.match(source, /limit:\s*z\.number\(\)\.int\(\)\.min\(1\)\.max\(500\)/);
+    assert.match(source, /pendingSampleLimit:\s*z\.number\(\)\.int\(\)\.min\(1\)\.max\(50\)/);
+    assert.match(source, /TOOL_NAMES\.LIST_NOTES[\s\S]*readOnlyHint:\s*true/);
+    assert.match(source, /TOOL_NAMES\.GET_INDEX_STATUS[\s\S]*readOnlyHint:\s*true/);
+});
+
+test("semantic search stores bounded excerpts instead of full note bodies", () => {
+    const source = read("mcp/src/domain/semanticService.ts");
+    assert.match(source, /function toExcerpt/);
+    assert.match(source, /snippet:\s*toExcerpt\(job\.content\)/);
+    assert.match(source, /excerpt:\s*toExcerpt\(note\.snippet\)/);
+});
+
+test("editor mutation tools return lightweight confirmation payloads", () => {
+    const source = read("mcp/src/tools/editorCommands.ts");
+    assert.match(source, /const toMutationPayload/);
+    assert.doesNotMatch(source, /TOOL_NAMES\.INSERT_AT_CURSOR[\s\S]*content:/);
+    assert.doesNotMatch(source, /TOOL_NAMES\.REPLACE_RANGE[\s\S]*content:/);
+    assert.match(source, /editorState/);
+});
+
+test("plugin supports note move bridge method", () => {
+    const source = read("plugin/src/main.ts");
+    assert.match(source, /case "notes\.move"/);
+    assert.match(source, /"notes\.move"/);
+    assert.match(source, /handleNotesMove/);
+    assert.match(source, /Destination already exists/);
 });

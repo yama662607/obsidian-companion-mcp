@@ -30,7 +30,7 @@ export function registerSemanticSearchTool(server: McpServer, semanticService: S
                     summary = "⚠️ Semantic model is not loaded. Generating first search result may take a moment.";
                     instructions = "The model will be loaded from disk on the first search. If you deleted the 'models' directory, you must run 'refresh_semantic_index' to re-download it.";
                 } else if (result.matches.length > 0) {
-                    summary = `✅ Found ${result.matches.length} semantic matches`;
+                    summary = `✅ Found ${result.matches.length} candidate notes. Use 'get_note' for full content.`;
                 } else if (result.indexStatus.ready) {
                     summary = "❓ No semantic matches found for this query.";
                 } else {

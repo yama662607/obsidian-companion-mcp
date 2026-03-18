@@ -482,6 +482,9 @@ var IndexingQueue = class {
   isRunning() {
     return this.running;
   }
+  getPendingSample(limit) {
+    return this.queue.slice(0, Math.max(limit, 0)).map((job) => job.path);
+  }
   enqueue(job) {
     const existingIndex = this.queue.findIndex((item) => item.path === job.path);
     if (existingIndex !== -1) {
@@ -492,6 +495,22 @@ var IndexingQueue = class {
     }
     this.queue.push(job);
     return true;
+  }
+  renamePath(from, to) {
+    const existingIndex = this.queue.findIndex((item) => item.path === from);
+    if (existingIndex === -1) {
+      return;
+    }
+    this.queue[existingIndex] = {
+      ...this.queue[existingIndex],
+      path: to
+    };
+  }
+  removePath(path5) {
+    const existingIndex = this.queue.findIndex((item) => item.path === path5);
+    if (existingIndex !== -1) {
+      this.queue.splice(existingIndex, 1);
+    }
   }
   async process(handler, maxItems = 25) {
     if (this.running) {
@@ -524,6 +543,13 @@ function cosineSimilarity(a, b) {
   }
   return dotProduct;
 }
+function toExcerpt(content, maxLength = 240) {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(maxLength - 3, 0))}...`;
+}
 var SemanticService = class {
   notes = /* @__PURE__ */ new Map();
   queue = new IndexingQueue();
@@ -539,7 +565,7 @@ var SemanticService = class {
       const embedding = await this.provider.embed(job.content, false);
       this.notes.set(job.path, {
         path: job.path,
-        snippet: job.content,
+        snippet: toExcerpt(job.content),
         updatedAt: job.updatedAt,
         embedding
       });
@@ -554,8 +580,20 @@ var SemanticService = class {
   }
   remove(path5) {
     this.notes.delete(path5);
+    this.queue.removePath(path5);
   }
-  getIndexStatus() {
+  movePath(from, to) {
+    const existing = this.notes.get(from);
+    if (existing) {
+      this.notes.delete(from);
+      this.notes.set(to, {
+        ...existing,
+        path: to
+      });
+    }
+    this.queue.renamePath(from, to);
+  }
+  getIndexStatus(sampleLimit = 20) {
     const pendingCount = this.queue.getPendingCount();
     const indexedCount = this.notes.size;
     return {
@@ -564,7 +602,8 @@ var SemanticService = class {
       running: this.queue.isRunning(),
       ready: pendingCount === 0,
       isEmpty: indexedCount === 0,
-      modelReady: this.provider.getRuntimeState().modelReady
+      modelReady: this.provider.getRuntimeState().modelReady,
+      pendingSample: this.queue.getPendingSample(sampleLimit)
     };
   }
   async prepareModel() {
@@ -596,7 +635,7 @@ var SemanticService = class {
       const score = cosineSimilarity(queryVector, note.embedding);
       return {
         path: note.path,
-        snippet: note.snippet,
+        excerpt: toExcerpt(note.snippet),
         score
       };
     }).sort((a, b) => b.score - a.score).slice(0, limit);
@@ -767,16 +806,26 @@ function getVaultRoot() {
   }
   return path3.resolve(configured);
 }
-function resolveVaultPath(notePath) {
+function normalizeVaultRelativePath(notePath, allowEmpty = false) {
   if (!notePath) {
+    if (allowEmpty) {
+      return "";
+    }
     throw new DomainError("VALIDATION", "path is required");
   }
   const normalized = path3.posix.normalize(notePath.replaceAll("\\", "/"));
+  if (allowEmpty && (normalized === "." || normalized === "")) {
+    return "";
+  }
   if (normalized.startsWith("/") || normalized === ".." || normalized.startsWith("../")) {
     throw new DomainError("VALIDATION", `Invalid vault-relative path: ${notePath}`);
   }
+  return normalized === "." ? "" : normalized;
+}
+function resolveVaultPath(notePath, allowEmpty = false) {
+  const normalized = normalizeVaultRelativePath(notePath, allowEmpty);
   const vaultRoot = getVaultRoot();
-  const resolved = path3.resolve(vaultRoot, normalized);
+  const resolved = normalized ? path3.resolve(vaultRoot, normalized) : vaultRoot;
   const relative2 = path3.relative(vaultRoot, resolved);
   if (relative2 === ".." || relative2.startsWith(`..${path3.sep}`) || path3.isAbsolute(relative2)) {
     throw new DomainError("VALIDATION", `Path escapes vault root: ${notePath}`);
@@ -828,6 +877,118 @@ function deleteNote(path5) {
     return false;
   }
   fs3.rmSync(filePath);
+  return true;
+}
+function compareEntries(a, b) {
+  if (a.kind !== b.kind) {
+    return a.kind === "directory" ? -1 : 1;
+  }
+  return a.path.localeCompare(b.path, "en");
+}
+function encodeCursor(entry) {
+  return Buffer.from(JSON.stringify({ path: entry.path, kind: entry.kind }), "utf8").toString("base64url");
+}
+function decodeCursor(cursor) {
+  try {
+    const decoded = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+    if (!decoded.path || decoded.kind !== "file" && decoded.kind !== "directory") {
+      throw new Error("invalid cursor");
+    }
+    return { path: decoded.path, kind: decoded.kind };
+  } catch {
+    throw new DomainError("VALIDATION", "Invalid list cursor");
+  }
+}
+function listEntries(dirPath, options = {}) {
+  const rootPath = resolveVaultPath(dirPath, true);
+  if (!fs3.existsSync(rootPath)) {
+    throw new DomainError("NOT_FOUND", `Directory not found: ${dirPath || "."}`);
+  }
+  const stats = fs3.statSync(rootPath);
+  if (!stats.isDirectory()) {
+    throw new DomainError("VALIDATION", `Path is not a directory: ${dirPath || "."}`);
+  }
+  const recursive = options.recursive ?? false;
+  const includeDirs = options.includeDirs ?? true;
+  const limit = Math.min(Math.max(options.limit ?? 100, 1), 500);
+  const vaultRoot = getVaultRoot();
+  const results = [];
+  function scan(dir) {
+    const entries2 = fs3.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries2) {
+      if (entry.name.startsWith(".")) {
+        continue;
+      }
+      const fullPath = path3.join(dir, entry.name);
+      const entryStats = fs3.statSync(fullPath);
+      const relativePath = path3.relative(vaultRoot, fullPath).split(path3.sep).join("/");
+      if (entry.isDirectory()) {
+        if (includeDirs) {
+          results.push({
+            path: relativePath,
+            name: entry.name,
+            kind: "directory",
+            updatedAt: entryStats.mtimeMs,
+            size: 0
+          });
+        }
+        if (recursive) {
+          scan(fullPath);
+        }
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith(".md")) {
+        continue;
+      }
+      results.push({
+        path: relativePath,
+        name: entry.name,
+        kind: "file",
+        updatedAt: entryStats.mtimeMs,
+        size: entryStats.size
+      });
+    }
+  }
+  scan(rootPath);
+  results.sort(compareEntries);
+  let startIndex = 0;
+  if (options.cursor) {
+    const cursor = decodeCursor(options.cursor);
+    startIndex = results.findIndex((entry) => compareEntries(entry, {
+      path: cursor.path,
+      kind: cursor.kind,
+      name: "",
+      updatedAt: 0,
+      size: 0
+    }) > 0);
+    if (startIndex === -1) {
+      startIndex = results.length;
+    }
+  }
+  const entries = results.slice(startIndex, startIndex + limit);
+  const hasMore = startIndex + entries.length < results.length;
+  return {
+    entries,
+    nextCursor: hasMore && entries.length > 0 ? encodeCursor(entries[entries.length - 1]) : null,
+    hasMore,
+    truncated: hasMore
+  };
+}
+function moveNote(fromPath, toPath) {
+  const sourcePath = resolveVaultPath(fromPath);
+  const destinationPath = resolveVaultPath(toPath);
+  if (!fs3.existsSync(sourcePath)) {
+    return false;
+  }
+  if (fs3.existsSync(destinationPath)) {
+    throw new DomainError("CONFLICT", `Destination already exists: ${toPath}`);
+  }
+  const sourceStats = fs3.statSync(sourcePath);
+  if (!sourceStats.isFile()) {
+    throw new DomainError("VALIDATION", `Path is not a note file: ${fromPath}`);
+  }
+  ensureParentDir(destinationPath);
+  fs3.renameSync(sourcePath, destinationPath);
   return true;
 }
 function listNotes() {
@@ -936,25 +1097,71 @@ var NoteService = class {
       };
     }
   }
+  async list(path5, options) {
+    const result = listEntries(path5, options);
+    return {
+      path: path5,
+      ...result,
+      degraded: false,
+      degradedReason: null
+    };
+  }
+  async move(from, to) {
+    try {
+      await this.pluginClient.send("notes.move", { from, to });
+      this.semanticService?.movePath(from, to);
+      return { from, to, degraded: false, degradedReason: null };
+    } catch {
+      const moved = moveNote(from, to);
+      if (!moved) {
+        throw new DomainError("NOT_FOUND", `Note not found: ${from}`);
+      }
+      this.semanticService?.movePath(from, to);
+      return { from, to, degraded: true, degradedReason: "plugin_unavailable" };
+    }
+  }
+  async getIndexStatus(pendingSampleLimit) {
+    if (!this.semanticService) {
+      return {
+        pendingCount: 0,
+        indexedCount: 0,
+        running: false,
+        ready: false,
+        isEmpty: true,
+        modelReady: false,
+        pendingSample: []
+      };
+    }
+    return this.semanticService.getIndexStatus(pendingSampleLimit);
+  }
   async refreshIndex() {
     if (!this.semanticService) {
-      return { totalFound: 0, updatedCount: 0, modelReady: false };
+      return {
+        totalFound: 0,
+        queuedCount: 0,
+        flushedCount: 0,
+        pendingCount: 0,
+        indexedCount: 0,
+        modelReady: false
+      };
     }
     await this.semanticService.prepareModel();
     const notes = listNotes();
-    let updatedCount = 0;
+    let queuedCount = 0;
     for (const note of notes) {
       const wasUpdated = this.semanticService.upsert(note.path, note.content, note.updatedAt);
       if (wasUpdated) {
-        updatedCount++;
+        queuedCount++;
       }
     }
-    if (updatedCount > 0) {
-      await this.semanticService.flushIndex(5);
-    }
+    const flushedCount = queuedCount > 0 ? await this.semanticService.flushIndex(5) : 0;
+    const indexStatus = this.semanticService.getIndexStatus();
     return {
       totalFound: notes.length,
-      updatedCount,
+      queuedCount,
+      flushedCount,
+      pendingCount: indexStatus.pendingCount,
+      indexedCount: indexStatus.indexedCount,
       modelReady: true
     };
   }
@@ -1050,6 +1257,9 @@ var TOOL_NAMES = {
   GET_ACTIVE_CONTEXT: "get_active_context",
   INSERT_AT_CURSOR: "insert_at_cursor",
   REPLACE_RANGE: "replace_range",
+  LIST_NOTES: "list_notes",
+  MOVE_NOTE: "move_note",
+  GET_INDEX_STATUS: "get_index_status",
   CREATE_NOTE: "create_note",
   GET_NOTE: "get_note",
   UPDATE_NOTE_CONTENT: "update_note_content",
@@ -1062,6 +1272,9 @@ var TOOL_NAME_LIST = [
   TOOL_NAMES.GET_ACTIVE_CONTEXT,
   TOOL_NAMES.INSERT_AT_CURSOR,
   TOOL_NAMES.REPLACE_RANGE,
+  TOOL_NAMES.LIST_NOTES,
+  TOOL_NAMES.MOVE_NOTE,
+  TOOL_NAMES.GET_INDEX_STATUS,
   TOOL_NAMES.CREATE_NOTE,
   TOOL_NAMES.GET_NOTE,
   TOOL_NAMES.UPDATE_NOTE_CONTENT,
@@ -1093,7 +1306,7 @@ function registerSemanticSearchTool(server, semanticService) {
           summary = "\u26A0\uFE0F Semantic model is not loaded. Generating first search result may take a moment.";
           instructions = "The model will be loaded from disk on the first search. If you deleted the 'models' directory, you must run 'refresh_semantic_index' to re-download it.";
         } else if (result.matches.length > 0) {
-          summary = `\u2705 Found ${result.matches.length} semantic matches`;
+          summary = `\u2705 Found ${result.matches.length} candidate notes. Use 'get_note' for full content.`;
         } else if (result.indexStatus.ready) {
           summary = "\u2753 No semantic matches found for this query.";
         } else {
@@ -1144,6 +1357,15 @@ var rangeSchema = z2.object({
 
 // src/tools/editorCommands.ts
 function registerEditorTools(server, editorService) {
+  const toMutationPayload = (result) => ({
+    activeFile: typeof result.context.activeFile === "string" ? result.context.activeFile : null,
+    cursor: result.context.cursor ?? null,
+    selection: typeof result.context.selection === "string" ? result.context.selection : "",
+    degraded: result.degraded,
+    degradedReason: result.degradedReason,
+    noActiveEditor: result.noActiveEditor,
+    editorState: result.noActiveEditor ? "none" : "active"
+  });
   server.registerTool(
     TOOL_NAMES.GET_ACTIVE_CONTEXT,
     {
@@ -1188,12 +1410,7 @@ function registerEditorTools(server, editorService) {
     async (params) => {
       try {
         const result = await editorService.insertText(params.text, params.position);
-        return okResult(`Text inserted (${result.degraded ? "degraded" : "normal"})`, {
-          ...result.context,
-          degraded: result.degraded,
-          degradedReason: result.degradedReason,
-          noActiveEditor: result.noActiveEditor
-        });
+        return okResult(`Text inserted (${result.degraded ? "degraded" : "normal"})`, toMutationPayload(result));
       } catch (error) {
         const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "insert failed");
         return errorResult(domainError);
@@ -1215,12 +1432,7 @@ function registerEditorTools(server, editorService) {
     async (params) => {
       try {
         const result = await editorService.replaceRange(params.text, params.range);
-        return okResult(`Range replaced (${result.degraded ? "degraded" : "normal"})`, {
-          ...result.context,
-          degraded: result.degraded,
-          degradedReason: result.degradedReason,
-          noActiveEditor: result.noActiveEditor
-        });
+        return okResult(`Range replaced (${result.degraded ? "degraded" : "normal"})`, toMutationPayload(result));
       } catch (error) {
         const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "replace failed");
         return errorResult(domainError);
@@ -1237,6 +1449,20 @@ var createNoteInputSchema = z4.object({
 });
 var getNoteInputSchema = z4.object({
   path: z4.string().describe("Vault-relative path")
+});
+var listNotesInputSchema = z4.object({
+  path: z4.string().optional().default("").describe("Vault-relative directory path. Empty string means vault root."),
+  cursor: z4.string().optional().describe("Opaque continuation cursor from a previous list_notes result"),
+  limit: z4.number().int().min(1).max(500).optional().default(100).describe("Maximum number of entries to return"),
+  recursive: z4.boolean().optional().default(false).describe("Whether to recurse into subdirectories"),
+  includeDirs: z4.boolean().optional().default(true).describe("Whether to include directories in the results")
+});
+var moveNoteInputSchema = z4.object({
+  from: z4.string().describe("Existing vault-relative note path"),
+  to: z4.string().describe("Destination vault-relative note path")
+});
+var getIndexStatusInputSchema = z4.object({
+  pendingSampleLimit: z4.number().int().min(1).max(50).optional().default(20).describe("Maximum number of pending paths to sample")
 });
 var updateNoteContentInputSchema = z4.object({
   path: z4.string().describe("Vault-relative path"),
@@ -1260,11 +1486,11 @@ function registerNoteTool(server, noteService) {
     async (params) => {
       try {
         const stats = await noteService.refreshIndex();
-        let summary = "\u2705 Semantic indexing initialized.";
+        let summary = "\u2705 Semantic indexing queued.";
         if (!stats.modelReady) {
           summary = "\u274C Failed to prepare the embedding model.";
-        } else if (stats.updatedCount > 0) {
-          summary += ` Models are ready. Scanning ${stats.totalFound} notes. Generating ${stats.updatedCount} embeddings in the background.`;
+        } else if (stats.queuedCount > 0) {
+          summary += ` Found ${stats.totalFound} notes. Queued ${stats.queuedCount} note(s), processed ${stats.flushedCount} immediately, and ${stats.pendingCount} remain pending.`;
         } else {
           summary += ` Index is already up-to-date with ${stats.totalFound} notes.`;
         }
@@ -1292,6 +1518,30 @@ function registerNoteTool(server, noteService) {
     }
   );
   server.registerTool(
+    TOOL_NAMES.LIST_NOTES,
+    {
+      description: "List notes and directories under a vault-relative folder with bounded, cursor-based pagination.",
+      inputSchema: listNotesInputSchema,
+      annotations: {
+        readOnlyHint: true
+      }
+    },
+    async (params) => {
+      try {
+        const result = await noteService.list(params.path, {
+          cursor: params.cursor,
+          limit: params.limit,
+          recursive: params.recursive,
+          includeDirs: params.includeDirs
+        });
+        return okResult(`Listed ${result.entries.length} entries`, result);
+      } catch (error) {
+        const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "list notes failed");
+        return errorResult(domainError);
+      }
+    }
+  );
+  server.registerTool(
     TOOL_NAMES.GET_NOTE,
     {
       description: "Read a markdown note content and normalized metadata.",
@@ -1306,6 +1556,22 @@ function registerNoteTool(server, noteService) {
         return okResult(`Read note (${result.degraded ? "degraded" : "normal"})`, result);
       } catch (error) {
         const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "get note failed");
+        return errorResult(domainError);
+      }
+    }
+  );
+  server.registerTool(
+    TOOL_NAMES.MOVE_NOTE,
+    {
+      description: "Move or rename a note within the vault without leaving the vault root.",
+      inputSchema: moveNoteInputSchema
+    },
+    async (params) => {
+      try {
+        const result = await noteService.move(params.from, params.to);
+        return okResult(`Moved note (${result.degraded ? "degraded" : "normal"})`, result);
+      } catch (error) {
+        const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "move note failed");
         return errorResult(domainError);
       }
     }
@@ -1360,6 +1626,25 @@ function registerNoteTool(server, noteService) {
         return okResult(`Updated metadata (${result.degraded ? "degraded" : "normal"})`, result);
       } catch (error) {
         const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "update metadata failed");
+        return errorResult(domainError);
+      }
+    }
+  );
+  server.registerTool(
+    TOOL_NAMES.GET_INDEX_STATUS,
+    {
+      description: "Inspect semantic index readiness, queue depth, and a bounded sample of pending note paths.",
+      inputSchema: getIndexStatusInputSchema,
+      annotations: {
+        readOnlyHint: true
+      }
+    },
+    async (params) => {
+      try {
+        const result = await noteService.getIndexStatus(params.pendingSampleLimit);
+        return okResult("Retrieved semantic index status", result);
+      } catch (error) {
+        const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "get index status failed");
         return errorResult(domainError);
       }
     }

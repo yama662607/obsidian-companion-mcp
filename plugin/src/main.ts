@@ -49,6 +49,11 @@ interface NotesDeleteParams {
     path: string;
 }
 
+interface NotesMoveParams {
+    from: string;
+    to: string;
+}
+
 interface MetadataUpdateParams {
     path: string;
     metadata: Record<string, unknown>;
@@ -76,6 +81,8 @@ class LocalJsonRpcHost {
                     return this.handleNotesRead(id, request.params as NotesReadParams);
                 case "notes.delete":
                     return this.handleNotesDelete(id, request.params as NotesDeleteParams);
+                case "notes.move":
+                    return this.handleNotesMove(id, request.params as NotesMoveParams);
                 case "metadata.update":
                     return this.handleMetadataUpdate(id, request.params as MetadataUpdateParams);
                 case "editor.applyCommand":
@@ -97,6 +104,7 @@ class LocalJsonRpcHost {
                 "notes.read",
                 "notes.write",
                 "notes.delete",
+                "notes.move",
                 "metadata.update"
             ],
             availability: "normal",
@@ -200,6 +208,38 @@ class LocalJsonRpcHost {
             id,
             protocolVersion: PROTOCOL_VERSION,
             result: { success: true }
+        };
+    }
+
+    private async handleNotesMove(id: JsonRpcId, params: NotesMoveParams): Promise<JsonRpcResponse<unknown>> {
+        if (!params?.from || !params?.to) {
+            return this.validationError(id, "Source and destination paths are required");
+        }
+
+        const file = this.plugin.app.vault.getAbstractFileByPath(params.from);
+        if (!file || !(file instanceof TFile)) {
+            return this.errorResponse(id, "NOT_FOUND", `Note not found: ${params.from}`);
+        }
+
+        const existingTarget = this.plugin.app.vault.getAbstractFileByPath(params.to);
+        if (existingTarget) {
+            return this.errorResponse(id, "CONFLICT", `Destination already exists: ${params.to}`);
+        }
+
+        try {
+            await this.plugin.app.vault.rename(file, params.to);
+        } catch (error) {
+            if (isMissingVaultFileError(error)) {
+                return this.errorResponse(id, "NOT_FOUND", `Note not found: ${params.from}`);
+            }
+            throw error;
+        }
+
+        return {
+            jsonrpc: "2.0",
+            id,
+            protocolVersion: PROTOCOL_VERSION,
+            result: { success: true, path: params.to }
         };
     }
 

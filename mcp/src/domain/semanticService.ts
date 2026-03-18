@@ -22,6 +22,14 @@ function cosineSimilarity(a: number[], b: number[]): number {
     return dotProduct;
 }
 
+function toExcerpt(content: string, maxLength = 240): string {
+    const normalized = content.replace(/\s+/g, " ").trim();
+    if (normalized.length <= maxLength) {
+        return normalized;
+    }
+    return `${normalized.slice(0, Math.max(maxLength - 3, 0))}...`;
+}
+
 export class SemanticService {
     private notes = new Map<string, IndexedNote>();
     private queue = new IndexingQueue();
@@ -41,7 +49,7 @@ export class SemanticService {
             const embedding = await this.provider.embed(job.content, false);
             this.notes.set(job.path, {
                 path: job.path,
-                snippet: job.content,
+                snippet: toExcerpt(job.content),
                 updatedAt: job.updatedAt,
                 embedding,
             });
@@ -59,9 +67,30 @@ export class SemanticService {
 
     remove(path: string): void {
         this.notes.delete(path);
+        this.queue.removePath(path);
     }
 
-    getIndexStatus(): { pendingCount: number; indexedCount: number; running: boolean; ready: boolean; isEmpty: boolean; modelReady: boolean } {
+    movePath(from: string, to: string): void {
+        const existing = this.notes.get(from);
+        if (existing) {
+            this.notes.delete(from);
+            this.notes.set(to, {
+                ...existing,
+                path: to,
+            });
+        }
+        this.queue.renamePath(from, to);
+    }
+
+    getIndexStatus(sampleLimit = 20): {
+        pendingCount: number;
+        indexedCount: number;
+        running: boolean;
+        ready: boolean;
+        isEmpty: boolean;
+        modelReady: boolean;
+        pendingSample: string[];
+    } {
         const pendingCount = this.queue.getPendingCount();
         const indexedCount = this.notes.size;
         // In this context, modelReady means the provider can embed (local files exist or remote is active)
@@ -73,6 +102,7 @@ export class SemanticService {
             ready: pendingCount === 0,
             isEmpty: indexedCount === 0,
             modelReady: this.provider.getRuntimeState().modelReady,
+            pendingSample: this.queue.getPendingSample(sampleLimit),
         };
     }
 
@@ -88,8 +118,16 @@ export class SemanticService {
         query: string,
         limit: number,
     ): Promise<{
-        matches: Array<{ path: string; score: number; snippet: string }>;
-        indexStatus: { pendingCount: number; indexedCount: number; running: boolean; ready: boolean; isEmpty: boolean; modelReady: boolean };
+        matches: Array<{ path: string; score: number; excerpt: string }>;
+        indexStatus: {
+            pendingCount: number;
+            indexedCount: number;
+            running: boolean;
+            ready: boolean;
+            isEmpty: boolean;
+            modelReady: boolean;
+            pendingSample: string[];
+        };
     }> {
         // Only flush if we have something to flush and we don't want to trigger auto-download here
         // But if the user explicitly calls search, they might expect some auto-indexing of pending items.
@@ -111,7 +149,7 @@ export class SemanticService {
      * 2. Calculate cosine similarity against all indexed notes.
      * 3. Sort by score and return top results.
      */
-    async search(query: string, limit: number): Promise<Array<{ path: string; score: number; snippet: string }>> {
+    async search(query: string, limit: number): Promise<Array<{ path: string; score: number; excerpt: string }>> {
         if (this.notes.size === 0) return [];
 
         // Query embedding uses "query: " prefix
@@ -122,7 +160,7 @@ export class SemanticService {
                 const score = cosineSimilarity(queryVector, note.embedding);
                 return {
                     path: note.path,
-                    snippet: note.snippet,
+                    excerpt: toExcerpt(note.snippet),
                     score,
                 };
             })

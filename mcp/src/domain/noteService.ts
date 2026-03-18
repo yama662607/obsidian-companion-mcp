@@ -96,9 +96,88 @@ export class NoteService {
         }
     }
 
-    async refreshIndex(): Promise<{ totalFound: number; updatedCount: number; modelReady: boolean }> {
+    async list(
+        path: string,
+        options: { cursor?: string; limit?: number; recursive?: boolean; includeDirs?: boolean },
+    ): Promise<{
+        path: string;
+        entries: fallback.ListedEntry[];
+        nextCursor: string | null;
+        hasMore: boolean;
+        truncated: boolean;
+        degraded: boolean;
+        degradedReason: string | null;
+    }> {
+        const result = fallback.listEntries(path, options);
+        return {
+            path,
+            ...result,
+            degraded: false,
+            degradedReason: null,
+        };
+    }
+
+    async move(from: string, to: string): Promise<{
+        from: string;
+        to: string;
+        degraded: boolean;
+        degradedReason: string | null;
+    }> {
+        try {
+            await this.pluginClient.send("notes.move", { from, to });
+            this.semanticService?.movePath(from, to);
+            return { from, to, degraded: false, degradedReason: null };
+        } catch {
+            const moved = fallback.moveNote(from, to);
+            if (!moved) {
+                throw new DomainError("NOT_FOUND", `Note not found: ${from}`);
+            }
+            this.semanticService?.movePath(from, to);
+            return { from, to, degraded: true, degradedReason: "plugin_unavailable" };
+        }
+    }
+
+    async getIndexStatus(pendingSampleLimit: number): Promise<{
+        pendingCount: number;
+        indexedCount: number;
+        running: boolean;
+        ready: boolean;
+        isEmpty: boolean;
+        modelReady: boolean;
+        pendingSample: string[];
+    }> {
         if (!this.semanticService) {
-            return { totalFound: 0, updatedCount: 0, modelReady: false };
+            return {
+                pendingCount: 0,
+                indexedCount: 0,
+                running: false,
+                ready: false,
+                isEmpty: true,
+                modelReady: false,
+                pendingSample: [],
+            };
+        }
+
+        return this.semanticService.getIndexStatus(pendingSampleLimit);
+    }
+
+    async refreshIndex(): Promise<{
+        totalFound: number;
+        queuedCount: number;
+        flushedCount: number;
+        pendingCount: number;
+        indexedCount: number;
+        modelReady: boolean;
+    }> {
+        if (!this.semanticService) {
+            return {
+                totalFound: 0,
+                queuedCount: 0,
+                flushedCount: 0,
+                pendingCount: 0,
+                indexedCount: 0,
+                modelReady: false,
+            };
         }
 
         // 1. Ensure model is ready (this might download models if missing)
@@ -106,23 +185,27 @@ export class NoteService {
 
         // 2. Queue all notes for indexing
         const notes = fallback.listNotes();
-        let updatedCount = 0;
+        let queuedCount = 0;
 
         for (const note of notes) {
             const wasUpdated = this.semanticService.upsert(note.path, note.content, note.updatedAt);
             if (wasUpdated) {
-                updatedCount++;
+                queuedCount++;
             }
         }
 
         // 3. Process a small batch immediately to confirm it works
-        if (updatedCount > 0) {
-            await this.semanticService.flushIndex(5);
-        }
+        const flushedCount = queuedCount > 0
+            ? await this.semanticService.flushIndex(5)
+            : 0;
+        const indexStatus = this.semanticService.getIndexStatus();
 
         return {
             totalFound: notes.length,
-            updatedCount,
+            queuedCount,
+            flushedCount,
+            pendingCount: indexStatus.pendingCount,
+            indexedCount: indexStatus.indexedCount,
             modelReady: true,
         };
     }

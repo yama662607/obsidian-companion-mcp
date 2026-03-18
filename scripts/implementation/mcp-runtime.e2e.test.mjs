@@ -113,6 +113,9 @@ test("mcp e2e: refactored tool surface is discoverable", async (t) => {
 
     assert.ok(names.includes("search_notes_semantic"));
     assert.ok(names.includes("create_note"));
+    assert.ok(names.includes("list_notes"));
+    assert.ok(names.includes("move_note"));
+    assert.ok(names.includes("get_index_status"));
     assert.ok(names.includes("get_note"));
     assert.ok(names.includes("update_note_content"));
     assert.ok(names.includes("delete_note"));
@@ -134,9 +137,76 @@ test("mcp e2e: refactored tool surface is discoverable", async (t) => {
     assert.ok(getTool);
     assert.equal(getTool.annotations?.readOnlyHint, true);
 
+    const listTool = toolByName.get("list_notes");
+    assert.ok(listTool);
+    assert.equal(listTool.annotations?.readOnlyHint, true);
+
+    const indexStatusTool = toolByName.get("get_index_status");
+    assert.ok(indexStatusTool);
+    assert.equal(indexStatusTool.annotations?.readOnlyHint, true);
+
     const updateMetadataTool = toolByName.get("update_note_metadata");
     assert.ok(updateMetadataTool);
     assert.equal(updateMetadataTool.annotations?.idempotentHint, true);
+});
+
+test("mcp e2e: discovery tools support bounded listing, move, and index inspection", async (t) => {
+    resetE2EVault();
+    const session = await createMcpClient();
+    t.after(async () => {
+        await session.close();
+    });
+
+    fs.mkdirSync(path.join(e2eVaultRoot, "e2e", "folder"), { recursive: true });
+    fs.writeFileSync(path.join(e2eVaultRoot, "e2e", "folder", "a.md"), "# A\n\nbody", "utf8");
+    fs.writeFileSync(path.join(e2eVaultRoot, "e2e", "folder", "b.md"), "# B\n\nbody", "utf8");
+
+    const listedFirst = await session.client.callTool({
+        name: "list_notes",
+        arguments: {
+            path: "e2e/folder",
+            limit: 1,
+        },
+    });
+    assert.ok(!listedFirst.isError);
+    assert.equal(listedFirst.structuredContent.entries.length, 1);
+    assert.equal(listedFirst.structuredContent.hasMore, true);
+    assert.ok(typeof listedFirst.structuredContent.nextCursor === "string");
+
+    const listedSecond = await session.client.callTool({
+        name: "list_notes",
+        arguments: {
+            path: "e2e/folder",
+            limit: 1,
+            cursor: listedFirst.structuredContent.nextCursor,
+        },
+    });
+    assert.ok(!listedSecond.isError);
+    assert.equal(listedSecond.structuredContent.entries.length, 1);
+    assert.notEqual(listedFirst.structuredContent.entries[0].path, listedSecond.structuredContent.entries[0].path);
+
+    const moved = await session.client.callTool({
+        name: "move_note",
+        arguments: {
+            from: "e2e/folder/a.md",
+            to: "e2e/archive/a.md",
+        },
+    });
+    assert.ok(!moved.isError);
+    assert.equal(moved.structuredContent.from, "e2e/folder/a.md");
+    assert.equal(moved.structuredContent.to, "e2e/archive/a.md");
+    assert.equal(fs.existsSync(path.join(e2eVaultRoot, "e2e", "folder", "a.md")), false);
+    assert.equal(fs.existsSync(path.join(e2eVaultRoot, "e2e", "archive", "a.md")), true);
+
+    const indexStatus = await session.client.callTool({
+        name: "get_index_status",
+        arguments: {
+            pendingSampleLimit: 5,
+        },
+    });
+    assert.ok(!indexStatus.isError);
+    assert.ok(typeof indexStatus.structuredContent.pendingCount === "number");
+    assert.ok(Array.isArray(indexStatus.structuredContent.pendingSample));
 });
 
 test("mcp e2e: note, metadata, and semantic flow behaves consistently", async (t) => {
@@ -203,6 +273,45 @@ test("mcp e2e: note, metadata, and semantic flow behaves consistently", async (t
     });
     assert.ok(!deleted.isError);
     assert.equal(deleted.structuredContent.deleted, true);
+});
+
+test("mcp e2e: semantic search returns bounded excerpts for large notes", async (t) => {
+    resetE2EVault();
+    const session = await createMcpClient({
+        envOverrides: {
+            USE_REMOTE_EMBEDDING: "true",
+        },
+    });
+    t.after(async () => {
+        await session.close();
+    });
+
+    const repeated = "large semantic body ".repeat(30);
+    const pathArg = "e2e/large-search.md";
+
+    const created = await session.client.callTool({
+        name: "create_note",
+        arguments: {
+            path: pathArg,
+            content: `# Large Search\n\n${repeated}\nunique finder token`,
+        },
+    });
+    assert.ok(!created.isError);
+
+    const searched = await session.client.callTool({
+        name: "search_notes_semantic",
+        arguments: {
+            query: "unique finder token",
+            limit: 3,
+        },
+    });
+    assert.ok(!searched.isError);
+
+    const match = searched.structuredContent.matches.find((item) => item.path === pathArg);
+    assert.ok(match);
+    assert.ok(typeof match.excerpt === "string");
+    assert.ok(match.excerpt.length <= 240);
+    assert.ok(!("snippet" in match));
 });
 
 test("mcp e2e: update_note_content preserves YAML array frontmatter", async (t) => {
@@ -392,7 +501,8 @@ test("mcp e2e: refresh_semantic_index skips hidden directories", async (t) => {
     });
     assert.ok(!refreshed.isError);
     assert.equal(refreshed.structuredContent.totalFound, 1);
-    assert.equal(refreshed.structuredContent.updatedCount, 1);
+    assert.equal(refreshed.structuredContent.queuedCount, 1);
+    assert.equal(refreshed.structuredContent.flushedCount, 1);
 
     const searched = await session.client.callTool({
         name: "search_notes_semantic",

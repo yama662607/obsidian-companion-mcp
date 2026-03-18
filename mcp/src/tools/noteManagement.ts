@@ -15,6 +15,23 @@ const getNoteInputSchema = z.object({
     path: z.string().describe("Vault-relative path"),
 });
 
+const listNotesInputSchema = z.object({
+    path: z.string().optional().default("").describe("Vault-relative directory path. Empty string means vault root."),
+    cursor: z.string().optional().describe("Opaque continuation cursor from a previous list_notes result"),
+    limit: z.number().int().min(1).max(500).optional().default(100).describe("Maximum number of entries to return"),
+    recursive: z.boolean().optional().default(false).describe("Whether to recurse into subdirectories"),
+    includeDirs: z.boolean().optional().default(true).describe("Whether to include directories in the results"),
+});
+
+const moveNoteInputSchema = z.object({
+    from: z.string().describe("Existing vault-relative note path"),
+    to: z.string().describe("Destination vault-relative note path"),
+});
+
+const getIndexStatusInputSchema = z.object({
+    pendingSampleLimit: z.number().int().min(1).max(50).optional().default(20).describe("Maximum number of pending paths to sample"),
+});
+
 const updateNoteContentInputSchema = z.object({
     path: z.string().describe("Vault-relative path"),
     content: z.string().describe("New full content"),
@@ -42,11 +59,11 @@ export function registerNoteTool(server: McpServer, noteService: NoteService): v
             try {
                 // Ensure params is received, even if empty, to satisfy SDK validation
                 const stats = await noteService.refreshIndex();
-                let summary = "✅ Semantic indexing initialized.";
+                let summary = "✅ Semantic indexing queued.";
                 if (!stats.modelReady) {
                     summary = "❌ Failed to prepare the embedding model.";
-                } else if (stats.updatedCount > 0) {
-                    summary += ` Models are ready. Scanning ${stats.totalFound} notes. Generating ${stats.updatedCount} embeddings in the background.`;
+                } else if (stats.queuedCount > 0) {
+                    summary += ` Found ${stats.totalFound} notes. Queued ${stats.queuedCount} note(s), processed ${stats.flushedCount} immediately, and ${stats.pendingCount} remain pending.`;
                 } else {
                     summary += ` Index is already up-to-date with ${stats.totalFound} notes.`;
                 }
@@ -76,6 +93,31 @@ export function registerNoteTool(server: McpServer, noteService: NoteService): v
     );
 
     server.registerTool(
+        TOOL_NAMES.LIST_NOTES,
+        {
+            description: "List notes and directories under a vault-relative folder with bounded, cursor-based pagination.",
+            inputSchema: listNotesInputSchema,
+            annotations: {
+                readOnlyHint: true,
+            },
+        },
+        async (params) => {
+            try {
+                const result = await noteService.list(params.path, {
+                    cursor: params.cursor,
+                    limit: params.limit,
+                    recursive: params.recursive,
+                    includeDirs: params.includeDirs,
+                });
+                return okResult(`Listed ${result.entries.length} entries`, result);
+            } catch (error) {
+                const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "list notes failed");
+                return errorResult(domainError);
+            }
+        },
+    );
+
+    server.registerTool(
         TOOL_NAMES.GET_NOTE,
         {
             description: "Read a markdown note content and normalized metadata.",
@@ -90,6 +132,23 @@ export function registerNoteTool(server: McpServer, noteService: NoteService): v
                 return okResult(`Read note (${result.degraded ? "degraded" : "normal"})`, result);
             } catch (error) {
                 const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "get note failed");
+                return errorResult(domainError);
+            }
+        },
+    );
+
+    server.registerTool(
+        TOOL_NAMES.MOVE_NOTE,
+        {
+            description: "Move or rename a note within the vault without leaving the vault root.",
+            inputSchema: moveNoteInputSchema,
+        },
+        async (params) => {
+            try {
+                const result = await noteService.move(params.from, params.to);
+                return okResult(`Moved note (${result.degraded ? "degraded" : "normal"})`, result);
+            } catch (error) {
+                const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "move note failed");
                 return errorResult(domainError);
             }
         },
@@ -147,6 +206,26 @@ export function registerNoteTool(server: McpServer, noteService: NoteService): v
                 return okResult(`Updated metadata (${result.degraded ? "degraded" : "normal"})`, result);
             } catch (error) {
                 const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "update metadata failed");
+                return errorResult(domainError);
+            }
+        },
+    );
+
+    server.registerTool(
+        TOOL_NAMES.GET_INDEX_STATUS,
+        {
+            description: "Inspect semantic index readiness, queue depth, and a bounded sample of pending note paths.",
+            inputSchema: getIndexStatusInputSchema,
+            annotations: {
+                readOnlyHint: true,
+            },
+        },
+        async (params) => {
+            try {
+                const result = await noteService.getIndexStatus(params.pendingSampleLimit);
+                return okResult("Retrieved semantic index status", result);
+            } catch (error) {
+                const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "get index status failed");
                 return errorResult(domainError);
             }
         },

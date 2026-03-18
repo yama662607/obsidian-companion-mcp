@@ -7,6 +7,16 @@ import { positionSchema } from "../schemas/common";
 import { TOOL_NAMES } from "../constants/toolNames";
 
 export function registerEditorTools(server: McpServer, editorService: EditorService): void {
+    const toMutationPayload = (result: Awaited<ReturnType<EditorService["insertText"]>>) => ({
+        activeFile: typeof result.context.activeFile === "string" ? result.context.activeFile : null,
+        cursor: result.context.cursor ?? null,
+        selection: typeof result.context.selection === "string" ? result.context.selection : "",
+        degraded: result.degraded,
+        degradedReason: result.degradedReason,
+        noActiveEditor: result.noActiveEditor,
+        editorState: result.noActiveEditor ? "none" : "active",
+    });
+
     server.registerTool(
         TOOL_NAMES.GET_ACTIVE_CONTEXT,
         {
@@ -55,12 +65,7 @@ export function registerEditorTools(server: McpServer, editorService: EditorServ
         async (params) => {
             try {
                 const result = await editorService.insertText(params.text, params.position);
-                return okResult(`Text inserted (${result.degraded ? "degraded" : "normal"})`, {
-                    ...result.context,
-                    degraded: result.degraded,
-                    degradedReason: result.degradedReason,
-                    noActiveEditor: result.noActiveEditor,
-                });
+                return okResult(`Text inserted (${result.degraded ? "degraded" : "normal"})`, toMutationPayload(result));
             } catch (error) {
                 const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "insert failed");
                 return errorResult(domainError);
@@ -83,12 +88,7 @@ export function registerEditorTools(server: McpServer, editorService: EditorServ
         async (params) => {
             try {
                 const result = await editorService.replaceRange(params.text, params.range);
-                return okResult(`Range replaced (${result.degraded ? "degraded" : "normal"})`, {
-                    ...result.context,
-                    degraded: result.degraded,
-                    degradedReason: result.degradedReason,
-                    noActiveEditor: result.noActiveEditor,
-                });
+                return okResult(`Range replaced (${result.degraded ? "degraded" : "normal"})`, toMutationPayload(result));
             } catch (error) {
                 const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "replace failed");
                 return errorResult(domainError);
