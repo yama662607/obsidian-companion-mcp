@@ -1,6 +1,6 @@
 {
   "name": "@yama662607/obsidian-companion-plugin",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Obsidian plugin runtime exposing vault context to the companion MCP server and agent workflows",
   "author": "yama662607",
   "license": "MIT",

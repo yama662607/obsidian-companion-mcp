@@ -103,8 +103,15 @@ test("review-bot compatibility avoids fetch, console.log, and hardcoded config d
 
     assert.doesNotMatch(pluginClient, /fetch\(/);
     assert.match(pluginClient, /postJson/);
+    assert.match(pluginClient, /reject\(error instanceof Error \? error : new Error\("Failed to parse plugin response"\)\)/);
     assert.doesNotMatch(pluginSource, /console\.log/);
     assert.match(pluginSource, /console\.debug/);
+    assert.match(pluginSource, /http\.Server<typeof IncomingMessage, typeof ServerResponse>/);
+    assert.match(pluginSource, /\.setName\("Server"\)\s*\.setHeading\(\)/);
+    assert.match(pluginSource, /new Notice\("Invalid port in settings; using default\."\)/);
+    assert.match(pluginSource, /new Notice\("Invalid port number\."\)/);
+    assert.match(pluginSource, /new Notice\("Invalid port\. Cannot start server\."\)/);
+    assert.match(pluginSource, /new Notice\("Server restarted\."\)/);
     assert.doesNotMatch(serverSource, /"\.obsidian"/);
     assert.doesNotMatch(providerSource, /"\.obsidian"/);
 });

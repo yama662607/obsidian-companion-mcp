@@ -4,6 +4,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
+// src/infra/pluginClient.ts
+import http from "http";
+import https from "https";
+
 // ../shared/protocol.ts
 var PROTOCOL_VERSION = "1.0.0";
 function isJsonRpcFailure(input) {
@@ -118,15 +122,7 @@ var PluginClient = class {
       protocolVersion: PROTOCOL_VERSION
     };
     try {
-      const response = await fetch(this.pluginUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request)
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const json = await response.json();
+      const json = await this.postJson(request);
       if (isJsonRpcFailure(json)) {
         this.transition("normal", null, null);
         throw new DomainError(
@@ -153,19 +149,49 @@ var PluginClient = class {
       method: "health.ping",
       protocolVersion: PROTOCOL_VERSION
     };
-    const response = await fetch(this.pluginUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request)
-    });
-    if (!response.ok) {
-      throw new Error(`Handshake failed! status: ${response.status}`);
-    }
-    const json = await response.json();
+    const json = await this.postJson(request);
     if (isJsonRpcFailure(json)) {
       throw new Error(json.error.message);
     }
     return json.result;
+  }
+  async postJson(request) {
+    const url = new URL(this.pluginUrl);
+    const transport = url.protocol === "https:" ? https : http;
+    return new Promise((resolve2, reject) => {
+      const payload = JSON.stringify(request);
+      const httpRequest = transport.request(
+        url,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(payload)
+          }
+        },
+        (response) => {
+          const chunks = [];
+          response.on("data", (chunk) => {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          });
+          response.on("end", () => {
+            const rawBody = Buffer.concat(chunks).toString("utf8");
+            if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
+              reject(new Error(`HTTP error! status: ${response.statusCode ?? "unknown"}`));
+              return;
+            }
+            try {
+              resolve2(JSON.parse(rawBody));
+            } catch (error) {
+              reject(error instanceof Error ? error : new Error("Failed to parse plugin response"));
+            }
+          });
+        }
+      );
+      httpRequest.on("error", reject);
+      httpRequest.write(payload);
+      httpRequest.end();
+    });
   }
   transition(availability, degradedReason, correlationId) {
     this.availability = availability;
@@ -312,8 +338,36 @@ var EditorService = class {
 
 // src/domain/embeddingProvider.ts
 import { pipeline, env } from "@xenova/transformers";
-import path from "path";
+import path2 from "path";
+import fs2 from "fs";
+
+// src/infra/configDir.ts
 import fs from "fs";
+import path from "path";
+function discoverVaultConfigDir(vaultPath) {
+  try {
+    const entries = fs.readdirSync(vaultPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !entry.name.startsWith(".")) {
+        continue;
+      }
+      const pluginsDir = path.join(vaultPath, entry.name, "plugins");
+      if (fs.existsSync(pluginsDir)) {
+        return entry.name;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+function resolvePluginStoragePath(vaultPath, configDir, ...segments) {
+  const normalizedConfigDir = configDir?.trim();
+  const pluginRoot = normalizedConfigDir ? path.join(vaultPath, normalizedConfigDir, "plugins", "companion-mcp") : path.join(vaultPath, "plugins", "companion-mcp");
+  return path.join(pluginRoot, ...segments);
+}
+
+// src/domain/embeddingProvider.ts
 var LocalEmbeddingProvider = class {
   kind = "local";
   extractor = null;
@@ -324,7 +378,7 @@ var LocalEmbeddingProvider = class {
   constructor(vaultPath, configDir) {
     this.vaultPath = vaultPath;
     this.configDir = configDir;
-    this.modelDir = path.join(vaultPath, configDir, "plugins", "companion-mcp", "models");
+    this.modelDir = resolvePluginStoragePath(vaultPath, configDir, "models");
     this.applyModelPath();
   }
   /**
@@ -333,25 +387,30 @@ var LocalEmbeddingProvider = class {
   updateModelPath(vaultPath, configDir) {
     this.vaultPath = vaultPath;
     this.configDir = configDir;
-    this.modelDir = path.join(vaultPath, configDir, "plugins", "companion-mcp", "models");
+    this.modelDir = resolvePluginStoragePath(vaultPath, configDir, "models");
     this.applyModelPath();
   }
   applyModelPath() {
-    if (!fs.existsSync(this.modelDir)) {
-      fs.mkdirSync(this.modelDir, { recursive: true });
+    if (!fs2.existsSync(this.modelDir)) {
+      fs2.mkdirSync(this.modelDir, { recursive: true });
     }
     env.allowRemoteModels = false;
     env.localModelPath = this.modelDir;
     env.cacheDir = this.modelDir;
   }
   async isReady() {
-    const modelPath = path.join(this.modelDir, this.modelName);
+    const modelPath = path2.join(this.modelDir, this.modelName);
     try {
-      await fs.promises.access(modelPath);
+      await fs2.promises.access(modelPath);
       return true;
     } catch {
       return false;
     }
+  }
+  getRuntimeState() {
+    return {
+      modelReady: this.extractor !== null || fs2.existsSync(path2.join(this.modelDir, this.modelName))
+    };
   }
   async prepare() {
     if (this.extractor) return;
@@ -389,10 +448,14 @@ var LocalEmbeddingProvider = class {
 };
 var RemoteEmbeddingProvider = class {
   kind = "remote";
-  async isReady() {
-    return true;
+  isReady() {
+    return Promise.resolve(true);
   }
-  async prepare() {
+  prepare() {
+    return Promise.resolve();
+  }
+  getRuntimeState() {
+    return { modelReady: true };
   }
   embed(text, _isQuery = false) {
     const normalized = text.trim().toLowerCase();
@@ -405,7 +468,7 @@ function createEmbeddingProvider(preferRemote = false, vaultPath = "", configDir
     return new RemoteEmbeddingProvider();
   }
   const effectiveVaultPath = vaultPath || "/tmp";
-  const effectiveConfigDir = configDir || ".obsidian";
+  const effectiveConfigDir = configDir || process.env.OBSIDIAN_CONFIG_DIR || discoverVaultConfigDir(effectiveVaultPath) || "";
   return new LocalEmbeddingProvider(effectiveVaultPath, effectiveConfigDir);
 }
 
@@ -468,8 +531,8 @@ var SemanticService = class {
   constructor(preferRemote = false, vaultPath = "", configDir = "") {
     this.provider = createEmbeddingProvider(preferRemote, vaultPath, configDir);
   }
-  queueIndex(path4, snippet, updatedAt) {
-    return this.queue.enqueue({ path: path4, content: snippet, updatedAt });
+  queueIndex(path5, snippet, updatedAt) {
+    return this.queue.enqueue({ path: path5, content: snippet, updatedAt });
   }
   async flushIndex(maxItems = 25) {
     return this.queue.process(async (job) => {
@@ -482,15 +545,15 @@ var SemanticService = class {
       });
     }, maxItems);
   }
-  upsert(path4, snippet, updatedAt) {
-    const existing = this.notes.get(path4);
+  upsert(path5, snippet, updatedAt) {
+    const existing = this.notes.get(path5);
     if (existing && existing.updatedAt >= updatedAt) {
       return false;
     }
-    return this.queueIndex(path4, snippet, updatedAt);
+    return this.queueIndex(path5, snippet, updatedAt);
   }
-  remove(path4) {
-    this.notes.delete(path4);
+  remove(path5) {
+    this.notes.delete(path5);
   }
   getIndexStatus() {
     const pendingCount = this.queue.getPendingCount();
@@ -501,7 +564,7 @@ var SemanticService = class {
       running: this.queue.isRunning(),
       ready: pendingCount === 0,
       isEmpty: indexedCount === 0,
-      modelReady: !!this.provider.extractor || this.provider.kind === "remote"
+      modelReady: this.provider.getRuntimeState().modelReady
     };
   }
   async prepareModel() {
@@ -552,8 +615,8 @@ var SemanticService = class {
 };
 
 // src/infra/fallbackStorage.ts
-import * as fs2 from "fs";
-import * as path2 from "path";
+import * as fs3 from "fs";
+import * as path3 from "path";
 
 // ../shared/frontmatter.ts
 function detectEol(content) {
@@ -702,87 +765,87 @@ function getVaultRoot() {
   if (!configured) {
     throw new DomainError("UNAVAILABLE", `${VAULT_PATH_ENV} is required for note operations`);
   }
-  return path2.resolve(configured);
+  return path3.resolve(configured);
 }
 function resolveVaultPath(notePath) {
   if (!notePath) {
     throw new DomainError("VALIDATION", "path is required");
   }
-  const normalized = path2.posix.normalize(notePath.replaceAll("\\", "/"));
+  const normalized = path3.posix.normalize(notePath.replaceAll("\\", "/"));
   if (normalized.startsWith("/") || normalized === ".." || normalized.startsWith("../")) {
     throw new DomainError("VALIDATION", `Invalid vault-relative path: ${notePath}`);
   }
   const vaultRoot = getVaultRoot();
-  const resolved = path2.resolve(vaultRoot, normalized);
-  const relative2 = path2.relative(vaultRoot, resolved);
-  if (relative2 === ".." || relative2.startsWith(`..${path2.sep}`) || path2.isAbsolute(relative2)) {
+  const resolved = path3.resolve(vaultRoot, normalized);
+  const relative2 = path3.relative(vaultRoot, resolved);
+  if (relative2 === ".." || relative2.startsWith(`..${path3.sep}`) || path3.isAbsolute(relative2)) {
     throw new DomainError("VALIDATION", `Path escapes vault root: ${notePath}`);
   }
   return resolved;
 }
 function ensureParentDir(filePath) {
-  const dir = path2.dirname(filePath);
-  fs2.mkdirSync(dir, { recursive: true });
+  const dir = path3.dirname(filePath);
+  fs3.mkdirSync(dir, { recursive: true });
 }
-function readNote(path4) {
-  const filePath = resolveVaultPath(path4);
-  if (!fs2.existsSync(filePath)) {
+function readNote(path5) {
+  const filePath = resolveVaultPath(path5);
+  if (!fs3.existsSync(filePath)) {
     return void 0;
   }
-  const content = fs2.readFileSync(filePath, "utf8");
+  const content = fs3.readFileSync(filePath, "utf8");
   return {
     content,
     metadata: parseFrontmatter(content)
   };
 }
-function writeNote(path4, content) {
-  const filePath = resolveVaultPath(path4);
-  const existing = readNote(path4);
+function writeNote(path5, content) {
+  const filePath = resolveVaultPath(path5);
+  const existing = readNote(path5);
   const metadata = hasFrontmatter(content) ? parseFrontmatter(content) : existing?.metadata ?? {};
   const next = {
     content: hasFrontmatter(content) ? content : applyFrontmatter(content, metadata),
     metadata
   };
   ensureParentDir(filePath);
-  fs2.writeFileSync(filePath, next.content, "utf8");
+  fs3.writeFileSync(filePath, next.content, "utf8");
   return next;
 }
-function updateMetadata(path4, metadata) {
-  const filePath = resolveVaultPath(path4);
-  const existing = readNote(path4) ?? { content: "", metadata: {} };
+function updateMetadata(path5, metadata) {
+  const filePath = resolveVaultPath(path5);
+  const existing = readNote(path5) ?? { content: "", metadata: {} };
   const mergedMetadata = { ...existing.metadata, ...metadata };
   const next = {
     content: applyFrontmatter(existing.content, mergedMetadata),
     metadata: mergedMetadata
   };
   ensureParentDir(filePath);
-  fs2.writeFileSync(filePath, next.content, "utf8");
+  fs3.writeFileSync(filePath, next.content, "utf8");
   return next;
 }
-function deleteNote(path4) {
-  const filePath = resolveVaultPath(path4);
-  if (!fs2.existsSync(filePath)) {
+function deleteNote(path5) {
+  const filePath = resolveVaultPath(path5);
+  if (!fs3.existsSync(filePath)) {
     return false;
   }
-  fs2.rmSync(filePath);
+  fs3.rmSync(filePath);
   return true;
 }
 function listNotes() {
   const vaultRoot = getVaultRoot();
   const results = [];
   function scan(dir) {
-    const entries = fs2.readdirSync(dir, { withFileTypes: true });
+    const entries = fs3.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
-      const fullPath = path2.join(dir, entry.name);
-      const relativePath = path2.relative(vaultRoot, fullPath);
+      const fullPath = path3.join(dir, entry.name);
+      const relativePath = path3.relative(vaultRoot, fullPath);
       if (entry.isDirectory()) {
         if (entry.name.startsWith(".")) {
           continue;
         }
         scan(fullPath);
       } else if (entry.isFile() && entry.name.endsWith(".md")) {
-        const stats = fs2.statSync(fullPath);
-        const content = fs2.readFileSync(fullPath, "utf8");
+        const stats = fs3.statSync(fullPath);
+        const content = fs3.readFileSync(fullPath, "utf8");
         results.push({
           path: relativePath,
           updatedAt: stats.mtimeMs,
@@ -791,7 +854,7 @@ function listNotes() {
       }
     }
   }
-  if (fs2.existsSync(vaultRoot)) {
+  if (fs3.existsSync(vaultRoot)) {
     scan(vaultRoot);
   }
   return results;
@@ -803,18 +866,18 @@ var NoteService = class {
     this.pluginClient = pluginClient;
     this.semanticService = semanticService;
   }
-  async read(path4) {
+  async read(path5) {
     try {
-      await this.pluginClient.send("notes.read", { path: path4 });
-      const hit = readNote(path4);
+      await this.pluginClient.send("notes.read", { path: path5 });
+      const hit = readNote(path5);
       if (!hit) {
-        throw new DomainError("NOT_FOUND", `Note not found: ${path4}`);
+        throw new DomainError("NOT_FOUND", `Note not found: ${path5}`);
       }
       return { content: hit.content, metadata: hit.metadata, degraded: false, degradedReason: null };
     } catch {
-      const hit = readNote(path4);
+      const hit = readNote(path5);
       if (!hit) {
-        throw new DomainError("NOT_FOUND", `Note not found: ${path4}`);
+        throw new DomainError("NOT_FOUND", `Note not found: ${path5}`);
       }
       return {
         content: hit.content,
@@ -824,49 +887,49 @@ var NoteService = class {
       };
     }
   }
-  async write(path4, content) {
-    if (!path4) {
+  async write(path5, content) {
+    if (!path5) {
       throw new DomainError("VALIDATION", "path is required");
     }
     try {
-      await this.pluginClient.send("notes.write", { path: path4, content });
-      const record = writeNote(path4, content);
-      this.semanticService?.upsert(path4, record.content, Date.now());
-      return { path: path4, degraded: false, degradedReason: null };
+      await this.pluginClient.send("notes.write", { path: path5, content });
+      const record = writeNote(path5, content);
+      this.semanticService?.upsert(path5, record.content, Date.now());
+      return { path: path5, degraded: false, degradedReason: null };
     } catch {
-      const record = writeNote(path4, content);
-      this.semanticService?.upsert(path4, record.content, Date.now());
-      return { path: path4, degraded: true, degradedReason: "plugin_unavailable" };
+      const record = writeNote(path5, content);
+      this.semanticService?.upsert(path5, record.content, Date.now());
+      return { path: path5, degraded: true, degradedReason: "plugin_unavailable" };
     }
   }
-  async delete(path4) {
+  async delete(path5) {
     try {
-      await this.pluginClient.send("notes.delete", { path: path4 });
-      this.semanticService?.remove(path4);
+      await this.pluginClient.send("notes.delete", { path: path5 });
+      this.semanticService?.remove(path5);
       return { deleted: true, degraded: false, degradedReason: null };
     } catch (error) {
-      const deleted = deleteNote(path4);
+      const deleted = deleteNote(path5);
       if (deleted) {
-        this.semanticService?.remove(path4);
+        this.semanticService?.remove(path5);
         return { deleted: true, degraded: true, degradedReason: "plugin_unavailable" };
       }
       if (error instanceof DomainError && error.code === "NOT_FOUND") {
         throw error;
       }
-      throw new DomainError("NOT_FOUND", `Note not found: ${path4}`);
+      throw new DomainError("NOT_FOUND", `Note not found: ${path5}`);
     }
   }
-  async updateMetadata(path4, metadata) {
+  async updateMetadata(path5, metadata) {
     try {
-      await this.pluginClient.send("metadata.update", { path: path4, metadata });
-      const record = updateMetadata(path4, metadata);
-      this.semanticService?.upsert(path4, record.content, Date.now());
-      return { path: path4, metadata: record.metadata, degraded: false, degradedReason: null };
+      await this.pluginClient.send("metadata.update", { path: path5, metadata });
+      const record = updateMetadata(path5, metadata);
+      this.semanticService?.upsert(path5, record.content, Date.now());
+      return { path: path5, metadata: record.metadata, degraded: false, degradedReason: null };
     } catch {
-      const record = updateMetadata(path4, metadata);
-      this.semanticService?.upsert(path4, record.content, Date.now());
+      const record = updateMetadata(path5, metadata);
+      this.semanticService?.upsert(path5, record.content, Date.now());
       return {
-        path: path4,
+        path: path5,
         metadata: record.metadata,
         degraded: true,
         degradedReason: "plugin_unavailable"
@@ -898,8 +961,8 @@ var NoteService = class {
 };
 
 // src/infra/vectorStore.ts
-import { promises as fs3 } from "fs";
-import path3 from "path";
+import { promises as fs4 } from "fs";
+import path4 from "path";
 var VectorStore = class {
   indexPath;
   vaultPath;
@@ -907,7 +970,7 @@ var VectorStore = class {
   constructor(vaultPath, configDir) {
     this.vaultPath = vaultPath;
     this.configDir = configDir;
-    this.indexPath = path3.join(vaultPath, configDir, "plugins", "companion-mcp", "data", "semantic-index.json");
+    this.indexPath = path4.join(vaultPath, configDir, "plugins", "companion-mcp", "data", "semantic-index.json");
   }
   /**
    * Updates the index path dynamically (called after plugin handshake).
@@ -915,16 +978,16 @@ var VectorStore = class {
   updateIndexPath(vaultPath, configDir) {
     this.vaultPath = vaultPath;
     this.configDir = configDir;
-    this.indexPath = path3.join(vaultPath, configDir, "plugins", "companion-mcp", "data", "semantic-index.json");
+    this.indexPath = path4.join(vaultPath, configDir, "plugins", "companion-mcp", "data", "semantic-index.json");
   }
   async load() {
     try {
       try {
-        await fs3.access(this.indexPath);
+        await fs4.access(this.indexPath);
       } catch {
         return /* @__PURE__ */ new Map();
       }
-      const raw = await fs3.readFile(this.indexPath, "utf-8");
+      const raw = await fs4.readFile(this.indexPath, "utf-8");
       const data = JSON.parse(raw);
       logInfo(`vector index loaded: ${data.length} notes from ${this.indexPath}`);
       return new Map(data);
@@ -935,10 +998,10 @@ var VectorStore = class {
   }
   async save(notes) {
     try {
-      const dir = path3.dirname(this.indexPath);
-      await fs3.mkdir(dir, { recursive: true });
+      const dir = path4.dirname(this.indexPath);
+      await fs4.mkdir(dir, { recursive: true });
       const data = Array.from(notes.entries());
-      await fs3.writeFile(this.indexPath, JSON.stringify(data), "utf-8");
+      await fs4.writeFile(this.indexPath, JSON.stringify(data), "utf-8");
       logInfo(`vector index saved: ${notes.size} notes to ${this.indexPath}`);
     } catch (error) {
       logError(`failed to save vector index: ${String(error)}`);
@@ -1540,7 +1603,7 @@ function registerContextRewritePrompt(server) {
         style: z5.string().min(1).optional()
       }
     },
-    async (args) => {
+    (args) => {
       const style = typeof args.style === "string" && args.style.trim().length > 0 ? args.style : "keep original tone";
       return {
         messages: [
@@ -1573,7 +1636,7 @@ function registerSearchThenInsertPrompt(server) {
         query: z6.string().min(1)
       }
     },
-    async (args) => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -1604,7 +1667,7 @@ function registerAgentRuntimeReviewPrompt(server) {
         severityThreshold: z7.enum(["high", "medium", "low"]).default("medium")
       }
     },
-    async (args) => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -1673,12 +1736,12 @@ async function resolveRuntimePaths(pluginClient) {
       "Missing required vault path. Set OBSIDIAN_VAULT_PATH or start the Obsidian Companion plugin so the vault can be discovered automatically."
     );
   }
-  const configDir = envConfigDir ?? handshake?.configDir ?? ".obsidian";
+  const configDir = envConfigDir ?? handshake?.configDir ?? pluginClient.getConfigDir() ?? discoverVaultConfigDir(vaultPath) ?? "";
   if (!process.env.OBSIDIAN_VAULT_PATH) {
     process.env.OBSIDIAN_VAULT_PATH = vaultPath;
     logInfo(`applying dynamic configuration: vaultPath=${vaultPath}`);
   }
-  if (!process.env.OBSIDIAN_CONFIG_DIR) {
+  if (configDir && !process.env.OBSIDIAN_CONFIG_DIR) {
     process.env.OBSIDIAN_CONFIG_DIR = configDir;
     logInfo(`applying dynamic configuration: configDir=${configDir}`);
   }

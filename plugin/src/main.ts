@@ -346,7 +346,7 @@ class LocalJsonRpcHost {
 export default class ObsidianCompanionPlugin extends Plugin {
     settings: CompanionSettings = DEFAULT_SETTINGS;
     private host: LocalJsonRpcHost | null = null;
-    private server: ReturnType<typeof http.createServer> | null = null;
+    private server: http.Server<typeof IncomingMessage, typeof ServerResponse> | null = null;
     private statusBarElement: HTMLElement | null = null;
 
     async onload(): Promise<void> {
@@ -356,7 +356,7 @@ export default class ObsidianCompanionPlugin extends Plugin {
 
         // Validate settings
         if (!this.isValidPort(this.settings.port)) {
-            new Notice("Companion MCP: invalid port in settings, using default");
+            new Notice("Invalid port in settings; using default.");
             this.settings.port = DEFAULT_SETTINGS.port;
             await this.saveSettings();
         }
@@ -396,7 +396,7 @@ export default class ObsidianCompanionPlugin extends Plugin {
     async saveSettings(): Promise<void> {
         // Validate before saving
         if (!this.isValidPort(this.settings.port)) {
-            new Notice("Companion MCP: invalid port number");
+            new Notice("Invalid port number.");
             return;
         }
 
@@ -428,7 +428,7 @@ export default class ObsidianCompanionPlugin extends Plugin {
 
     private startServer(): void {
         if (!this.settings.port || !this.isValidPort(this.settings.port)) {
-            new Notice("Companion MCP: invalid port, cannot start server");
+            new Notice("Invalid port. Cannot start server.");
             return;
         }
 
@@ -555,7 +555,7 @@ class CompanionSettingTab extends PluginSettingTab {
         containerEl.empty();
 
         new Setting(containerEl)
-            .setName("Companion MCP settings")
+            .setName("Server")
             .setHeading();
 
         new Setting(containerEl)
@@ -576,16 +576,16 @@ class CompanionSettingTab extends PluginSettingTab {
         const isServerRunning = this.plugin.getServerStatus();
         new Setting(containerEl)
             .setName("Server status")
-            .setDesc(isServerRunning ? "Server is running" : "Server is stopped")
-            .addButton(button => button
-                .setButtonText("Restart server")
-                .onClick(() => {
-                    this.plugin.restartServer();
-                    new Notice("Companion MCP: server restarted");
-                }));
+                .setDesc(isServerRunning ? "Server is running" : "Server is stopped")
+                .addButton(button => button
+                    .setButtonText("Restart server")
+                    .onClick(() => {
+                        this.plugin.restartServer();
+                        new Notice("Server restarted.");
+                    }));
 
         containerEl.createEl("p", {
-            text: "The companion MCP server provides AI agent access to your Obsidian vault. Only connections from localhost are allowed."
+            text: "Provides local JSON-RPC access for AI agents. Only localhost connections are allowed."
         });
     }
 }
