@@ -31,6 +31,8 @@ async function createMcpClient(options = {}) {
     const env = {
         ...inherited,
         OBSIDIAN_COMPANION_API_KEY: "local-dev-key",
+        // Default E2E isolation: do not talk to a real Obsidian plugin unless a test opts in.
+        OBSIDIAN_PLUGIN_PORT: "1",
         ...envOverrides,
     };
     if (includeDefaultVaultPath) {
