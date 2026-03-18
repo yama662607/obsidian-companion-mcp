@@ -3,11 +3,12 @@ import process from "node:process";
 import esbuild from "esbuild";
 
 const production = process.argv[2] === "production";
+const externalBuiltins = [...builtinModules, ...builtinModules.map((name) => `node:${name}`)];
 
 const context = await esbuild.context({
   entryPoints: ["src/main.ts"],
   bundle: true,
-  external: ["obsidian", "electron", ...builtinModules],
+  external: ["obsidian", "electron", ...externalBuiltins],
   format: "cjs",
   target: "es2018",
   logLevel: "info",
