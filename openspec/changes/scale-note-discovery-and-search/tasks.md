@@ -1,7 +1,7 @@
 ## 1. Discovery and contract design
 
 - [x] 1.1 Define `list_notes`, `move_note`, and `get_index_status` schemas, annotations, and structured response shapes
-- [ ] 1.2 Define migration notes for `search_notes_semantic` and editor mutation response changes
+- [x] 1.2 Define migration notes for `search_notes_semantic` and editor mutation response changes
 - [x] 1.3 Add source-level policy tests that lock in bounded results and intent-aligned payload rules
 
 ## 2. Lightweight storage and index plumbing
@@ -25,5 +25,5 @@
 ## 5. Verification and rollout
 
 - [x] 5.1 Add targeted implementation tests for large-folder listing, move semantics, and index status behavior
-- [ ] 5.2 Add E2E coverage for discovery-first workflows in real-device and isolated MCP runs
-- [ ] 5.3 Update docs, release notes, and test prompts to describe the new large-vault workflow and response contracts
+- [x] 5.2 Add E2E coverage for discovery-first workflows in real-device and isolated MCP runs
+- [x] 5.3 Update docs, release notes, and test prompts to describe the new large-vault workflow and response contracts

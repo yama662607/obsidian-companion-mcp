@@ -20,7 +20,9 @@
 2. get_active_context / insert_at_cursor / replace_range が実行できる
 3. update_note_metadata 後に get_note で frontmatter 反映が確認できる
 4. search_notes_semantic の結果に index 状態メタが含まれる
-5. Dual MCP 同時設定でツール干渉がない
+5. discovery-first フロー（list_notes または search_notes_semantic -> get_note）が成立する
+6. move_note と get_index_status が実行できる
+7. Dual MCP 同時設定でツール干渉がない
 
 ## 失敗時の対応
 

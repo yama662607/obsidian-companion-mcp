@@ -40,6 +40,8 @@ just plugin-install-local /absolute/path/to/YourVault
    - 起動時エラーが出ない
    - エディタ関連機能が利用できる
    - mcp から接続できる
+   - discovery-first フロー（list_notes / search_notes_semantic / get_note）が実行できる
+   - move_note / get_index_status が実行できる
 
 ## 3. 公開前チェック
 
@@ -63,3 +65,4 @@ GitHub Release 作成前に確認します。
 Obsidian実利用手順、Companion + Excalidraw を併用したレビューシナリオ、MCP設定例は次を参照してください。
 
 - docs/execution/agent-dual-mcp-review-playbook.md
+- docs/execution/agent-review-request-discovery-scale.md
