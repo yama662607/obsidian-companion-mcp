@@ -386,7 +386,7 @@ class LocalJsonRpcHost {
 export default class ObsidianCompanionPlugin extends Plugin {
     settings: CompanionSettings = DEFAULT_SETTINGS;
     private host: LocalJsonRpcHost | null = null;
-    private server: http.Server<typeof IncomingMessage, typeof ServerResponse> | null = null;
+    private server: ReturnType<typeof http.createServer> | null = null;
     private statusBarElement: HTMLElement | null = null;
 
     async onload(): Promise<void> {
@@ -625,7 +625,7 @@ class CompanionSettingTab extends PluginSettingTab {
                     }));
 
         containerEl.createEl("p", {
-            text: "Provides local JSON-RPC access for AI agents. Only localhost connections are allowed."
+            text: "Provides local access for AI agents. Only localhost connections are allowed."
         });
     }
 }

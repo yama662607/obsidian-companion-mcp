@@ -96,10 +96,10 @@ export class NoteService {
         }
     }
 
-    async list(
+    list(
         path: string,
         options: { cursor?: string; limit?: number; recursive?: boolean; includeDirs?: boolean },
-    ): Promise<{
+    ): {
         path: string;
         entries: fallback.ListedEntry[];
         nextCursor: string | null;
@@ -107,7 +107,7 @@ export class NoteService {
         truncated: boolean;
         degraded: boolean;
         degradedReason: string | null;
-    }> {
+    } {
         const result = fallback.listEntries(path, options);
         return {
             path,
@@ -137,7 +137,7 @@ export class NoteService {
         }
     }
 
-    async getIndexStatus(pendingSampleLimit: number): Promise<{
+    getIndexStatus(pendingSampleLimit: number): {
         pendingCount: number;
         indexedCount: number;
         running: boolean;
@@ -145,7 +145,7 @@ export class NoteService {
         isEmpty: boolean;
         modelReady: boolean;
         pendingSample: string[];
-    }> {
+    } {
         if (!this.semanticService) {
             return {
                 pendingCount: 0,
