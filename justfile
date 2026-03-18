@@ -9,6 +9,8 @@ set shell := ["bash", "-c"]
 # Package manager (npm/pnpm/bun)
 
 pm := "npm"
+biome := "npx -y @biomejs/biome@2.4.7"
+biome_targets := "biome.json mcp/src plugin/src shared scripts/execution scripts/implementation plugin/esbuild.config.mjs mcp/tsconfig.json plugin/tsconfig.json"
 
 # Subprojects
 
@@ -52,43 +54,27 @@ test *args="":
 # =============================================================================
 # --- Format ---
 
-# Check formatting (skip if Biome not configured)
+# Check formatting
 fmt-check:
     @echo "Checking formatting..."
-    @if [ -f "biome.json" ] || command -v biome >/dev/null 2>&1; then \
-        biome check --formatter-enabled=true --linter-enabled=false .; \
-    else \
-        echo "Biome not configured, skipping format check."; \
-    fi
+    @{{ biome }} check --formatter-enabled=true --linter-enabled=false {{ biome_targets }}
 
-# Format code (skip if Biome not configured)
+# Format code
 fmt:
     @echo "Formatting code..."
-    @if [ -f "biome.json" ] || command -v biome >/dev/null 2>&1; then \
-        biome format --write .; \
-    else \
-        echo "Biome not configured, skipping format."; \
-    fi
+    @{{ biome }} format --write {{ biome_targets }}
 
 # --- Lint ---
 
-# Lint code (skip if Biome not configured)
+# Lint code
 lint:
     @echo "Linting..."
-    @if [ -f "biome.json" ] || command -v biome >/dev/null 2>&1; then \
-        biome check .; \
-    else \
-        echo "Biome not configured, skipping lint."; \
-    fi
+    @{{ biome }} check --formatter-enabled=false --linter-enabled=true {{ biome_targets }}
 
-# Fix lint errors (skip if Biome not configured)
+# Fix lint errors
 lint-fix:
     @echo "Fixing lint errors..."
-    @if [ -f "biome.json" ] || command -v biome >/dev/null 2>&1; then \
-        biome check --write .; \
-    else \
-        echo "Biome not configured, skipping lint fix."; \
-    fi
+    @{{ biome }} check --write --unsafe --formatter-enabled=false --linter-enabled=true {{ biome_targets }}
 
 # --- Typecheck ---
 

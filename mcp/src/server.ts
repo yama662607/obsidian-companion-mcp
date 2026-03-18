@@ -1,137 +1,152 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { PluginClient } from "./infra/pluginClient";
+import type { HandshakeResult } from "./contracts/protocol";
 import { EditorService } from "./domain/editorService";
-import { SemanticService } from "./domain/semanticService";
+import { DomainError } from "./domain/errors";
 import { NoteService } from "./domain/noteService";
+import { SemanticService } from "./domain/semanticService";
+import { discoverVaultConfigDir } from "./infra/configDir";
+import { logError, logInfo } from "./infra/logger";
+import { PluginClient } from "./infra/pluginClient";
 import { VectorStore } from "./infra/vectorStore";
-import { registerSemanticSearchTool } from "./tools/semanticSearch";
-import { registerEditorTools } from "./tools/editorCommands";
-import { registerNoteTool } from "./tools/noteManagement";
-import { registerCapabilityMatrixResource } from "./resources/capabilityMatrix";
-import { registerSchemaSummaryResource } from "./resources/schemaSummary";
-import { registerFallbackBehaviorResource } from "./resources/fallbackBehavior";
-import { registerActiveEditorContextResource } from "./resources/activeEditorContext";
-import { registerRuntimeStatusResource } from "./resources/runtimeStatus";
-import { registerReviewChecklistResource } from "./resources/reviewChecklist";
+import { registerAgentRuntimeReviewPrompt } from "./prompts/agentRuntimeReview";
 import { registerContextRewritePrompt } from "./prompts/contextRewrite";
 import { registerSearchThenInsertPrompt } from "./prompts/searchThenInsert";
-import { registerAgentRuntimeReviewPrompt } from "./prompts/agentRuntimeReview";
-import { logError, logInfo } from "./infra/logger";
-import { DomainError } from "./domain/errors";
-import type { HandshakeResult } from "./contracts/protocol";
-import { discoverVaultConfigDir } from "./infra/configDir";
+import { registerActiveEditorContextResource } from "./resources/activeEditorContext";
+import { registerCapabilityMatrixResource } from "./resources/capabilityMatrix";
+import { registerFallbackBehaviorResource } from "./resources/fallbackBehavior";
+import { registerReviewChecklistResource } from "./resources/reviewChecklist";
+import { registerRuntimeStatusResource } from "./resources/runtimeStatus";
+import { registerSchemaSummaryResource } from "./resources/schemaSummary";
+import { registerEditorTools } from "./tools/editorCommands";
+import { registerNoteTool } from "./tools/noteManagement";
+import { registerSemanticSearchTool } from "./tools/semanticSearch";
 
 export interface ServerRuntime {
-    server: McpServer;
-    pluginClient: PluginClient;
-    semanticService: SemanticService;
-    vectorStore: VectorStore;
+  server: McpServer;
+  pluginClient: PluginClient;
+  semanticService: SemanticService;
+  vectorStore: VectorStore;
 }
 
 export function createServer(
-    runtimePaths: { vaultPath: string; configDir: string },
-    pluginClient = new PluginClient(),
+  runtimePaths: { vaultPath: string; configDir: string },
+  pluginClient = new PluginClient(),
 ): ServerRuntime {
-    const server = new McpServer({
-        name: "obsidian-companion-mcp",
-        version: "0.1.0",
-    });
+  const server = new McpServer({
+    name: "obsidian-companion-mcp",
+    version: "0.1.0",
+  });
 
-    // Use remote (mock) embedding provider if explicitly requested (e.g. for E2E tests)
-    const useRemote = process.env.USE_REMOTE_EMBEDDING === "true";
+  // Use remote (mock) embedding provider if explicitly requested (e.g. for E2E tests)
+  const useRemote = process.env.USE_REMOTE_EMBEDDING === "true";
 
-    const semanticService = new SemanticService(useRemote, runtimePaths.vaultPath, runtimePaths.configDir);
-    const vectorStore = new VectorStore(runtimePaths.vaultPath, runtimePaths.configDir);
-    const editorService = new EditorService(pluginClient);
-    const noteService = new NoteService(pluginClient, semanticService);
+  const semanticService = new SemanticService(
+    useRemote,
+    runtimePaths.vaultPath,
+    runtimePaths.configDir,
+  );
+  const vectorStore = new VectorStore(runtimePaths.vaultPath, runtimePaths.configDir);
+  const editorService = new EditorService(pluginClient);
+  const noteService = new NoteService(pluginClient, semanticService);
 
-    // Registration only: all behavior remains in tools/resources/prompts/domain layers.
-    registerSemanticSearchTool(server, semanticService);
-    registerEditorTools(server, editorService);
-    registerNoteTool(server, noteService);
+  // Registration only: all behavior remains in tools/resources/prompts/domain layers.
+  registerSemanticSearchTool(server, semanticService);
+  registerEditorTools(server, editorService);
+  registerNoteTool(server, noteService);
 
-    registerCapabilityMatrixResource(server);
-    registerSchemaSummaryResource(server);
-    registerFallbackBehaviorResource(server);
-    registerActiveEditorContextResource(server, editorService);
-    registerRuntimeStatusResource(server, pluginClient);
-    registerReviewChecklistResource(server);
+  registerCapabilityMatrixResource(server);
+  registerSchemaSummaryResource(server);
+  registerFallbackBehaviorResource(server);
+  registerActiveEditorContextResource(server, editorService);
+  registerRuntimeStatusResource(server, pluginClient);
+  registerReviewChecklistResource(server);
 
-    registerContextRewritePrompt(server);
-    registerSearchThenInsertPrompt(server);
-    registerAgentRuntimeReviewPrompt(server);
+  registerContextRewritePrompt(server);
+  registerSearchThenInsertPrompt(server);
+  registerAgentRuntimeReviewPrompt(server);
 
-    return { server, pluginClient, semanticService, vectorStore };
+  return { server, pluginClient, semanticService, vectorStore };
 }
 
 async function resolveRuntimePaths(pluginClient: PluginClient): Promise<{
-    vaultPath: string;
-    configDir: string;
-    handshake: HandshakeResult | null;
+  vaultPath: string;
+  configDir: string;
+  handshake: HandshakeResult | null;
 }> {
-    const envVaultPath = process.env.OBSIDIAN_VAULT_PATH?.trim();
-    const envConfigDir = process.env.OBSIDIAN_CONFIG_DIR?.trim();
-    let handshake: HandshakeResult | null = null;
+  const envVaultPath = process.env.OBSIDIAN_VAULT_PATH?.trim();
+  const envConfigDir = process.env.OBSIDIAN_CONFIG_DIR?.trim();
+  let handshake: HandshakeResult | null = null;
 
-    try {
-        handshake = await pluginClient.connect();
-        logInfo("startup handshake completed");
-    } catch (error) {
-        const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "startup handshake failed");
-        logError(
-            `startup handshake failed code=${domainError.code} correlationId=${domainError.correlationId} reason=${pluginClient.getRuntimeStatus().degradedReason ?? "n/a"}`,
-        );
-    }
+  try {
+    handshake = await pluginClient.connect();
+    logInfo("startup handshake completed");
+  } catch (error) {
+    const domainError =
+      error instanceof DomainError
+        ? error
+        : new DomainError("INTERNAL", "startup handshake failed");
+    logError(
+      `startup handshake failed code=${domainError.code} correlationId=${domainError.correlationId} reason=${pluginClient.getRuntimeStatus().degradedReason ?? "n/a"}`,
+    );
+  }
 
-    const vaultPath = envVaultPath ?? handshake?.vaultPath;
-    if (!vaultPath) {
-        throw new DomainError(
-            "VALIDATION",
-            "Missing required vault path. Set OBSIDIAN_VAULT_PATH or start the Obsidian Companion plugin so the vault can be discovered automatically.",
-        );
-    }
+  const vaultPath = envVaultPath ?? handshake?.vaultPath;
+  if (!vaultPath) {
+    throw new DomainError(
+      "VALIDATION",
+      "Missing required vault path. Set OBSIDIAN_VAULT_PATH or start the Obsidian Companion plugin so the vault can be discovered automatically.",
+    );
+  }
 
-    const configDir = envConfigDir ?? handshake?.configDir ?? pluginClient.getConfigDir() ?? discoverVaultConfigDir(vaultPath) ?? "";
+  const configDir =
+    envConfigDir ??
+    handshake?.configDir ??
+    pluginClient.getConfigDir() ??
+    discoverVaultConfigDir(vaultPath) ??
+    "";
 
-    if (!process.env.OBSIDIAN_VAULT_PATH) {
-        process.env.OBSIDIAN_VAULT_PATH = vaultPath;
-        logInfo(`applying dynamic configuration: vaultPath=${vaultPath}`);
-    }
+  if (!process.env.OBSIDIAN_VAULT_PATH) {
+    process.env.OBSIDIAN_VAULT_PATH = vaultPath;
+    logInfo(`applying dynamic configuration: vaultPath=${vaultPath}`);
+  }
 
-    if (configDir && !process.env.OBSIDIAN_CONFIG_DIR) {
-        process.env.OBSIDIAN_CONFIG_DIR = configDir;
-        logInfo(`applying dynamic configuration: configDir=${configDir}`);
-    }
+  if (configDir && !process.env.OBSIDIAN_CONFIG_DIR) {
+    process.env.OBSIDIAN_CONFIG_DIR = configDir;
+    logInfo(`applying dynamic configuration: configDir=${configDir}`);
+  }
 
-    return { vaultPath, configDir, handshake };
+  return { vaultPath, configDir, handshake };
 }
 
 export async function runServer(): Promise<void> {
-    const pluginClient = new PluginClient();
-    const runtimePaths = await resolveRuntimePaths(pluginClient);
-    const { server, semanticService, vectorStore } = createServer(runtimePaths, pluginClient);
+  const pluginClient = new PluginClient();
+  const runtimePaths = await resolveRuntimePaths(pluginClient);
+  const { server, semanticService, vectorStore } = createServer(runtimePaths, pluginClient);
 
-    // Load existing index from storage
-    const existingNotes = await vectorStore.load();
-    semanticService.setNotes(existingNotes);
+  // Load existing index from storage
+  const existingNotes = await vectorStore.load();
+  semanticService.setNotes(existingNotes);
 
-    // Handle graceful shutdown to save index
-    const shutdown = async () => {
-        clearInterval(saveInterval);
-        logInfo("shutting down, saving vector index...");
-        await vectorStore.save(semanticService.getNotes());
-        process.exit(0);
-    };
+  // Handle graceful shutdown to save index
+  const shutdown = async () => {
+    clearInterval(saveInterval);
+    logInfo("shutting down, saving vector index...");
+    await vectorStore.save(semanticService.getNotes());
+    process.exit(0);
+  };
 
-    process.on("SIGINT", shutdown);
-    process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 
-    // Periodically save index (every 5 minutes)
-    const saveInterval = setInterval(async () => {
-        await vectorStore.save(semanticService.getNotes());
-    }, 5 * 60 * 1000);
+  // Periodically save index (every 5 minutes)
+  const saveInterval = setInterval(
+    async () => {
+      await vectorStore.save(semanticService.getNotes());
+    },
+    5 * 60 * 1000,
+  );
 
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
 }

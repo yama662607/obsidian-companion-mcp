@@ -1,8 +1,8 @@
 type IndexedNote = {
-    path: string;
-    snippet: string;
-    updatedAt: number;
-    embedding: number[];
+  path: string;
+  snippet: string;
+  updatedAt: number;
+  embedding: number[];
 };
 
 import { createEmbeddingProvider, type EmbeddingProvider } from "./embeddingProvider";
@@ -14,171 +14,174 @@ import { IndexingQueue } from "./indexingQueue";
  * cosine similarity is equal to the dot product.
  */
 function cosineSimilarity(a: number[], b: number[]): number {
-    let dotProduct = 0;
-    const len = Math.min(a.length, b.length);
-    for (let i = 0; i < len; i += 1) {
-        dotProduct += a[i] * b[i];
-    }
-    return dotProduct;
+  let dotProduct = 0;
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i += 1) {
+    dotProduct += a[i] * b[i];
+  }
+  return dotProduct;
 }
 
 function toExcerpt(content: string, maxLength = 240): string {
-    const normalized = content.replace(/\s+/g, " ").trim();
-    if (normalized.length <= maxLength) {
-        return normalized;
-    }
-    return `${normalized.slice(0, Math.max(maxLength - 3, 0))}...`;
+  const normalized = content.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(maxLength - 3, 0))}...`;
 }
 
 export class SemanticService {
-    private notes = new Map<string, IndexedNote>();
-    private queue = new IndexingQueue();
-    private provider: EmbeddingProvider;
+  private notes = new Map<string, IndexedNote>();
+  private queue = new IndexingQueue();
+  private provider: EmbeddingProvider;
 
-    constructor(preferRemote = false, vaultPath = "", configDir = "") {
-        this.provider = createEmbeddingProvider(preferRemote, vaultPath, configDir);
+  constructor(preferRemote = false, vaultPath = "", configDir = "") {
+    this.provider = createEmbeddingProvider(preferRemote, vaultPath, configDir);
+  }
+
+  queueIndex(path: string, snippet: string, updatedAt: number): boolean {
+    return this.queue.enqueue({ path, content: snippet, updatedAt });
+  }
+
+  flushIndex(maxItems = 25): Promise<number> {
+    return this.queue.process(async (job) => {
+      // Document embeddings use "passage: " prefix
+      const embedding = await this.provider.embed(job.content, false);
+      this.notes.set(job.path, {
+        path: job.path,
+        snippet: toExcerpt(job.content),
+        updatedAt: job.updatedAt,
+        embedding,
+      });
+    }, maxItems);
+  }
+
+  upsert(path: string, snippet: string, updatedAt: number): boolean {
+    const existing = this.notes.get(path);
+    if (existing && existing.updatedAt >= updatedAt) {
+      return false;
     }
 
-    queueIndex(path: string, snippet: string, updatedAt: number): boolean {
-        return this.queue.enqueue({ path, content: snippet, updatedAt });
+    return this.queueIndex(path, snippet, updatedAt);
+  }
+
+  remove(path: string): void {
+    this.notes.delete(path);
+    this.queue.removePath(path);
+  }
+
+  movePath(from: string, to: string): void {
+    const existing = this.notes.get(from);
+    if (existing) {
+      this.notes.delete(from);
+      this.notes.set(to, {
+        ...existing,
+        path: to,
+      });
+    }
+    this.queue.renamePath(from, to);
+  }
+
+  getIndexStatus(sampleLimit = 20): {
+    pendingCount: number;
+    indexedCount: number;
+    running: boolean;
+    ready: boolean;
+    isEmpty: boolean;
+    modelReady: boolean;
+    pendingSample: string[];
+  } {
+    const pendingCount = this.queue.getPendingCount();
+    const indexedCount = this.notes.size;
+    // In this context, modelReady means the provider can embed (local files exist or remote is active)
+    // We can't easily make getIndexStatus async, so we'll rely on an internal flag or just let it be handled in search
+    return {
+      pendingCount,
+      indexedCount,
+      running: this.queue.isRunning(),
+      ready: pendingCount === 0,
+      isEmpty: indexedCount === 0,
+      modelReady: this.provider.getRuntimeState().modelReady,
+      pendingSample: this.queue.getPendingSample(sampleLimit),
+    };
+  }
+
+  async prepareModel(): Promise<void> {
+    await this.provider.prepare();
+  }
+
+  isModelReady(): Promise<boolean> {
+    return this.provider.isReady();
+  }
+
+  async searchWithStatus(
+    query: string,
+    limit: number,
+  ): Promise<{
+    matches: Array<{ path: string; score: number; excerpt: string }>;
+    indexStatus: {
+      pendingCount: number;
+      indexedCount: number;
+      running: boolean;
+      ready: boolean;
+      isEmpty: boolean;
+      modelReady: boolean;
+      pendingSample: string[];
+    };
+  }> {
+    // Only flush if we have something to flush and we don't want to trigger auto-download here
+    // But if the user explicitly calls search, they might expect some auto-indexing of pending items.
+    // However, the user wants to separate "heavy" indexing.
+    if (this.queue.getPendingCount() > 0) {
+      await this.flushIndex(Math.max(limit * 2, 10));
     }
 
-    async flushIndex(maxItems = 25): Promise<number> {
-        return this.queue.process(async (job) => {
-            // Document embeddings use "passage: " prefix
-            const embedding = await this.provider.embed(job.content, false);
-            this.notes.set(job.path, {
-                path: job.path,
-                snippet: toExcerpt(job.content),
-                updatedAt: job.updatedAt,
-                embedding,
-            });
-        }, maxItems);
-    }
+    const matches = await this.search(query, limit);
+    return {
+      matches,
+      indexStatus: this.getIndexStatus(),
+    };
+  }
 
-    upsert(path: string, snippet: string, updatedAt: number): boolean {
-        const existing = this.notes.get(path);
-        if (existing && existing.updatedAt >= updatedAt) {
-            return false;
-        }
+  /**
+   * ACTUAL SEMANTIC SEARCH IMPLEMENTATION:
+   * 1. Embed query with "query: " prefix.
+   * 2. Calculate cosine similarity against all indexed notes.
+   * 3. Sort by score and return top results.
+   */
+  async search(
+    query: string,
+    limit: number,
+  ): Promise<Array<{ path: string; score: number; excerpt: string }>> {
+    if (this.notes.size === 0) return [];
 
-        return this.queueIndex(path, snippet, updatedAt);
-    }
+    // Query embedding uses "query: " prefix
+    const queryVector = await this.provider.embed(query, true);
 
-    remove(path: string): void {
-        this.notes.delete(path);
-        this.queue.removePath(path);
-    }
-
-    movePath(from: string, to: string): void {
-        const existing = this.notes.get(from);
-        if (existing) {
-            this.notes.delete(from);
-            this.notes.set(to, {
-                ...existing,
-                path: to,
-            });
-        }
-        this.queue.renamePath(from, to);
-    }
-
-    getIndexStatus(sampleLimit = 20): {
-        pendingCount: number;
-        indexedCount: number;
-        running: boolean;
-        ready: boolean;
-        isEmpty: boolean;
-        modelReady: boolean;
-        pendingSample: string[];
-    } {
-        const pendingCount = this.queue.getPendingCount();
-        const indexedCount = this.notes.size;
-        // In this context, modelReady means the provider can embed (local files exist or remote is active)
-        // We can't easily make getIndexStatus async, so we'll rely on an internal flag or just let it be handled in search
+    return Array.from(this.notes.values())
+      .map((note) => {
+        const score = cosineSimilarity(queryVector, note.embedding);
         return {
-            pendingCount,
-            indexedCount,
-            running: this.queue.isRunning(),
-            ready: pendingCount === 0,
-            isEmpty: indexedCount === 0,
-            modelReady: this.provider.getRuntimeState().modelReady,
-            pendingSample: this.queue.getPendingSample(sampleLimit),
+          path: note.path,
+          excerpt: toExcerpt(note.snippet),
+          score,
         };
-    }
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+  }
 
-    async prepareModel(): Promise<void> {
-        await this.provider.prepare();
-    }
+  getProvider(): EmbeddingProvider {
+    return this.provider;
+  }
 
-    async isModelReady(): Promise<boolean> {
-        return this.provider.isReady();
-    }
+  // For testing/internal use
+  getNotes(): Map<string, IndexedNote> {
+    return this.notes;
+  }
 
-    async searchWithStatus(
-        query: string,
-        limit: number,
-    ): Promise<{
-        matches: Array<{ path: string; score: number; excerpt: string }>;
-        indexStatus: {
-            pendingCount: number;
-            indexedCount: number;
-            running: boolean;
-            ready: boolean;
-            isEmpty: boolean;
-            modelReady: boolean;
-            pendingSample: string[];
-        };
-    }> {
-        // Only flush if we have something to flush and we don't want to trigger auto-download here
-        // But if the user explicitly calls search, they might expect some auto-indexing of pending items.
-        // However, the user wants to separate "heavy" indexing.
-        if (this.queue.getPendingCount() > 0) {
-            await this.flushIndex(Math.max(limit * 2, 10));
-        }
-        
-        const matches = await this.search(query, limit);
-        return {
-            matches,
-            indexStatus: this.getIndexStatus(),
-        };
-    }
-
-    /**
-     * ACTUAL SEMANTIC SEARCH IMPLEMENTATION:
-     * 1. Embed query with "query: " prefix.
-     * 2. Calculate cosine similarity against all indexed notes.
-     * 3. Sort by score and return top results.
-     */
-    async search(query: string, limit: number): Promise<Array<{ path: string; score: number; excerpt: string }>> {
-        if (this.notes.size === 0) return [];
-
-        // Query embedding uses "query: " prefix
-        const queryVector = await this.provider.embed(query, true);
-
-        return Array.from(this.notes.values())
-            .map((note) => {
-                const score = cosineSimilarity(queryVector, note.embedding);
-                return {
-                    path: note.path,
-                    excerpt: toExcerpt(note.snippet),
-                    score,
-                };
-            })
-            .sort((a, b) => b.score - a.score)
-            .slice(0, limit);
-    }
-
-    getProvider(): EmbeddingProvider {
-        return this.provider;
-    }
-
-    // For testing/internal use
-    getNotes(): Map<string, IndexedNote> {
-        return this.notes;
-    }
-
-    // Replace entire index (useful for loading from storage)
-    setNotes(notes: Map<string, IndexedNote>): void {
-        this.notes = notes;
-    }
+  // Replace entire index (useful for loading from storage)
+  setNotes(notes: Map<string, IndexedNote>): void {
+    this.notes = notes;
+  }
 }

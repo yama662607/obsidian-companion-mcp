@@ -7,14 +7,9 @@
     "rootDir": "..",
     "strict": true,
     "esModuleInterop": true,
-    "types": [
-      "node"
-    ],
+    "types": ["node"],
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": [
-    "src/**/*",
-    "../shared/**/*"
-  ]
+  "include": ["src/**/*", "../shared/**/*"]
 }
