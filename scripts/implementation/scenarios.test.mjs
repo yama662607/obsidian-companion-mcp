@@ -113,7 +113,7 @@ test("review-bot compatibility avoids fetch, console.log, and hardcoded config d
   );
   assert.doesNotMatch(pluginSource, /console\.log/);
   assert.match(pluginSource, /console\.debug/);
-  assert.match(pluginSource, /ReturnType<typeof http\.createServer>/);
+  assert.match(pluginSource, /interface LocalServerHandle/);
   assert.match(pluginSource, /\.setName\("Server"\)\s*\.setHeading\(\)/);
   assert.match(pluginSource, /new Notice\("Invalid port in settings; using default\."\)/);
   assert.match(pluginSource, /new Notice\("Invalid port number\."\)/);

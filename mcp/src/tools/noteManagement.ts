@@ -136,9 +136,9 @@ export function registerNoteTool(server: McpServer, noteService: NoteService): v
         readOnlyHint: true,
       },
     },
-    async (params) => {
+    (params) => {
       try {
-        const result = await noteService.list(params.path, {
+        const result = noteService.list(params.path, {
           cursor: params.cursor,
           limit: params.limit,
           recursive: params.recursive,
@@ -269,9 +269,9 @@ export function registerNoteTool(server: McpServer, noteService: NoteService): v
         readOnlyHint: true,
       },
     },
-    async (params) => {
+    (params) => {
       try {
-        const result = await noteService.getIndexStatus(params.pendingSampleLimit);
+        const result = noteService.getIndexStatus(params.pendingSampleLimit);
         return okResult("Retrieved semantic index status", result);
       } catch (error) {
         const domainError =

@@ -69,6 +69,12 @@ interface MetadataUpdateParams {
   metadata: Record<string, unknown>;
 }
 
+interface LocalServerHandle {
+  close(callback?: () => void): void;
+  listen(port: number, hostname: string, listeningListener?: () => void): void;
+  on(event: "error", listener: (error: Error) => void): void;
+}
+
 function isMissingVaultFileError(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
@@ -414,7 +420,7 @@ class LocalJsonRpcHost {
 export default class ObsidianCompanionPlugin extends Plugin {
   settings: CompanionSettings = DEFAULT_SETTINGS;
   private host: LocalJsonRpcHost | null = null;
-  private server: ReturnType<typeof http.createServer> | null = null;
+  private server: LocalServerHandle | null = null;
   private statusBarElement: HTMLElement | null = null;
 
   async onload(): Promise<void> {
