@@ -171,6 +171,26 @@ test("active runtime docs use the current tool surface", () => {
   assert.doesNotMatch(dualReview, /\bplugin\s+obsidian-companion-mcp\b/i);
 });
 
+test("package README advertises only the current public tool surface", () => {
+  const source = read("mcp/README.md");
+
+  assert.match(source, /\bsearch_notes\b/);
+  assert.match(source, /\bsemantic_search_notes\b/);
+  assert.match(source, /\bread_note\b/);
+  assert.match(source, /\bread_active_context\b/);
+  assert.match(source, /\bedit_note\b/);
+  assert.match(source, /\bpatch_note_metadata\b/);
+  assert.match(source, /\bget_semantic_index_status\b/);
+  assert.doesNotMatch(source, /\bget_note\b/);
+  assert.doesNotMatch(source, /\bget_active_context\b/);
+  assert.doesNotMatch(source, /\bsearch_notes_semantic\b/);
+  assert.doesNotMatch(source, /\bupdate_note_content\b/);
+  assert.doesNotMatch(source, /\binsert_at_cursor\b/);
+  assert.doesNotMatch(source, /\breplace_range\b/);
+  assert.doesNotMatch(source, /\bupdate_note_metadata\b/);
+  assert.doesNotMatch(source, /\bget_index_status\b/);
+});
+
 test("server wiring registers search, read/edit, and lifecycle tool groups", () => {
   const source = read("mcp/src/server.ts");
 
@@ -181,6 +201,33 @@ test("server wiring registers search, read/edit, and lifecycle tool groups", () 
   assert.doesNotMatch(source, /version:\s*"0\.1\.0"/);
   assert.doesNotMatch(source, /registerEditorTools/);
   assert.doesNotMatch(source, /registerSemanticSearchTool/);
+});
+
+test("tool result preview avoids implicit object stringification", () => {
+  const source = read("mcp/src/domain/toolResult.ts");
+
+  assert.doesNotMatch(source, /return String\(structuredContent\)/);
+  assert.match(source, /case "string":/);
+  assert.match(source, /case "function":/);
+  assert.match(source, /JSON\.stringify\(/);
+});
+
+test("mcp README documents the current public tool surface", () => {
+  const source = read("mcp/README.md");
+
+  assert.match(source, /`list_notes`/);
+  assert.match(source, /`search_notes`/);
+  assert.match(source, /`semantic_search_notes`/);
+  assert.match(source, /`read_note`/);
+  assert.match(source, /`read_active_context`/);
+  assert.match(source, /`edit_note`/);
+  assert.match(source, /`patch_note_metadata`/);
+  assert.match(source, /`get_semantic_index_status`/);
+  assert.doesNotMatch(source, /`get_note`/);
+  assert.doesNotMatch(source, /`get_active_context`/);
+  assert.doesNotMatch(source, /`search_notes_semantic`/);
+  assert.doesNotMatch(source, /`update_note_metadata`/);
+  assert.doesNotMatch(source, /`get_index_status`/);
 });
 
 test("prompts and capability resources reference the final tool surface", () => {
@@ -215,4 +262,14 @@ test("plugin client preserves structured plugin errors", () => {
     source,
     /throw new DomainError\("UNAVAILABLE", "Plugin communication failed"[\s\S]*throw new DomainError\(\s*json\.error\.code/,
   );
+});
+
+test("tool result preview avoids generic object stringification", () => {
+  const source = read("mcp/src/domain/toolResult.ts");
+
+  assert.match(source, /case "string":/);
+  assert.match(source, /case "number":/);
+  assert.match(source, /case "boolean":/);
+  assert.match(source, /case "bigint":/);
+  assert.doesNotMatch(source, /return String\(structuredContent\)/);
 });

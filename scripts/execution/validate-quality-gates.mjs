@@ -160,6 +160,7 @@ const ACTIVE_RUNTIME_DOCS = [
   "docs/execution/agent-dual-mcp-test-request-prompt.md",
   "docs/execution/agent-review-request-post-vault-hardening-mcp-only.md",
   "docs/execution/agent-dual-mcp-review-playbook.md",
+  "mcp/README.md",
 ];
 
 const LEGACY_TOOL_NAME_REGEX =

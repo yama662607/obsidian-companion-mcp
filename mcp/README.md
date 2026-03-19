@@ -40,18 +40,22 @@ Example for Claude Desktop:
 
 AI agents can call the following tools:
 
-- `search_notes_semantic`: Meaning-based search that returns bounded excerpts for candidate notes.
-- `get_active_context`: Current file and cursor info.
-- `insert_at_cursor`: Insert text at current position and return lightweight mutation confirmation.
-- `replace_range`: Replace a validated range and return lightweight mutation confirmation.
 - `list_notes`: Folder-scoped note and directory listing with bounded pagination.
+- `search_notes`: Exact and metadata-aware vault search with read hints.
+- `semantic_search_notes`: Meaning-based search that returns bounded chunk results with read hints.
+- `read_note`: Read persisted note content, metadata, and edit handoff targets.
+- `read_active_context`: Read the active editor buffer and edit handoff targets.
+- `edit_note`: Unified edit tool for persisted notes and the active editor.
+- `create_note`: Create a markdown note.
+- `patch_note_metadata`: Patch YAML frontmatter metadata.
 - `move_note`: Move or rename a note within the vault.
-- `get_index_status`: Inspect semantic index readiness and pending work.
-- `create_note` / `get_note` / `delete_note`: Standard note operations.
-- `update_note_metadata`: YAML frontmatter management.
+- `delete_note`: Delete a note.
+- `get_semantic_index_status`: Inspect semantic index readiness and pending work.
+- `refresh_semantic_index`: Rebuild the semantic index to completion.
 
 Recommended workflow for large vaults:
 
-1. Use `list_notes` or `search_notes_semantic` to narrow candidates.
-2. Use `get_note` only for notes that need full content.
-3. Use `get_index_status` when semantic results may still be incomplete.
+1. Use `list_notes`, `search_notes`, or `semantic_search_notes` to narrow candidates.
+2. Use `read_note` or `read_active_context` to inspect the exact target.
+3. Pass `editTarget` / `editTargets.*` directly into `edit_note` for follow-up edits.
+4. Use `get_semantic_index_status` when semantic results may still be incomplete.

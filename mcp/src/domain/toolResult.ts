@@ -29,11 +29,27 @@ function buildStructuredPreview(structuredContent: unknown): string | null {
   if (structuredContent === null || structuredContent === undefined) {
     return null;
   }
-  if (typeof structuredContent !== "object") {
-    return String(structuredContent);
+
+  switch (typeof structuredContent) {
+    case "string":
+      return structuredContent;
+    case "number":
+    case "boolean":
+      return JSON.stringify(structuredContent);
+    case "bigint":
+      return structuredContent.toString();
+    case "function":
+    case "symbol":
+      return null;
+    default:
+      break;
   }
 
-  const serialized = JSON.stringify(structuredContent, null, 2);
+  const serialized = JSON.stringify(
+    structuredContent,
+    (_key, value) => (typeof value === "bigint" ? value.toString() : value),
+    2,
+  );
   if (!serialized) {
     return null;
   }
