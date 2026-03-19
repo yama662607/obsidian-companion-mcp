@@ -97,6 +97,21 @@ var EditorService = class {
   constructor(pluginClient) {
     this.pluginClient = pluginClient;
   }
+  getFallbackDegradedReason(error) {
+    if (!(error instanceof DomainError)) {
+      return "plugin_unavailable";
+    }
+    switch (error.code) {
+      case "VALIDATION":
+        return "plugin_validation_fallback_used";
+      case "CONFLICT":
+        return "plugin_conflict_fallback_used";
+      case "INTERNAL":
+        return "plugin_internal_fallback_used";
+      default:
+        return "plugin_unavailable";
+    }
+  }
   context = {
     activeFile: null,
     cursor: null,
@@ -114,11 +129,11 @@ var EditorService = class {
         degradedReason: null,
         noActiveEditor: context.activeFile === null
       };
-    } catch {
+    } catch (error) {
       return {
         context: this.context,
         degraded: true,
-        degradedReason: "plugin_unavailable",
+        degradedReason: this.getFallbackDegradedReason(error),
         noActiveEditor: this.context.activeFile === null
       };
     }
@@ -151,7 +166,7 @@ var EditorService = class {
         degradedReason: null,
         noActiveEditor: context.activeFile === null
       };
-    } catch {
+    } catch (error) {
       this.context = {
         ...this.context,
         content: `${this.context.content}${text}`,
@@ -160,7 +175,7 @@ var EditorService = class {
       return {
         context: this.context,
         degraded: true,
-        degradedReason: "plugin_unavailable",
+        degradedReason: this.getFallbackDegradedReason(error),
         noActiveEditor: this.context.activeFile === null
       };
     }
@@ -183,11 +198,12 @@ var EditorService = class {
         degradedReason: null,
         noActiveEditor: context.activeFile === null
       };
-    } catch {
+    } catch (error) {
+      const degradedReason = error instanceof DomainError && error.code !== "INTERNAL" ? this.getFallbackDegradedReason(error) : "plugin_unavailable_range_replace_unsupported";
       return {
         context: this.context,
         degraded: true,
-        degradedReason: "plugin_unavailable_range_replace_unsupported",
+        degradedReason,
         noActiveEditor: this.context.activeFile === null
       };
     }
