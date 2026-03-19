@@ -9,6 +9,9 @@ function logError(message) {
 }
 
 // src/server.ts
+import fs5 from "fs";
+import path6 from "path";
+import { fileURLToPath } from "url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
@@ -374,8 +377,8 @@ function ensureParentDir(filePath) {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
 }
-function readNote(path6) {
-  const filePath = resolveVaultPath(path6);
+function readNote(path7) {
+  const filePath = resolveVaultPath(path7);
   if (!fs.existsSync(filePath)) {
     return void 0;
   }
@@ -388,9 +391,9 @@ function readNote(path6) {
     size: stats.size
   };
 }
-function writeNote(path6, content) {
-  const filePath = resolveVaultPath(path6);
-  const existing = readNote(path6);
+function writeNote(path7, content) {
+  const filePath = resolveVaultPath(path7);
+  const existing = readNote(path7);
   const metadata = hasFrontmatter(content) ? parseFrontmatter(content) : existing?.metadata ?? {};
   const nextContent = hasFrontmatter(content) ? content : applyFrontmatter(content, metadata);
   ensureParentDir(filePath);
@@ -403,9 +406,9 @@ function writeNote(path6, content) {
     size: stats.size
   };
 }
-function updateMetadata(path6, metadata) {
-  const filePath = resolveVaultPath(path6);
-  const existing = readNote(path6) ?? { content: "", metadata: {}, updatedAt: Date.now(), size: 0 };
+function updateMetadata(path7, metadata) {
+  const filePath = resolveVaultPath(path7);
+  const existing = readNote(path7) ?? { content: "", metadata: {}, updatedAt: Date.now(), size: 0 };
   const mergedMetadata = { ...existing.metadata, ...metadata };
   const nextContent = applyFrontmatter(existing.content, mergedMetadata);
   ensureParentDir(filePath);
@@ -418,8 +421,8 @@ function updateMetadata(path6, metadata) {
     size: stats.size
   };
 }
-function deleteNote(path6) {
-  const filePath = resolveVaultPath(path6);
+function deleteNote(path7) {
+  const filePath = resolveVaultPath(path7);
   if (!fs.existsSync(filePath)) {
     return false;
   }
@@ -578,12 +581,12 @@ var NoteService = class {
     this.pluginClient = pluginClient;
     this.semanticService = semanticService;
   }
-  async read(path6) {
+  async read(path7) {
     try {
-      await this.pluginClient.send("notes.read", { path: path6 });
-      const hit = readNote(path6);
+      await this.pluginClient.send("notes.read", { path: path7 });
+      const hit = readNote(path7);
       if (!hit) {
-        throw new DomainError("NOT_FOUND", `Note not found: ${path6}`);
+        throw new DomainError("NOT_FOUND", `Note not found: ${path7}`);
       }
       return {
         content: hit.content,
@@ -594,9 +597,9 @@ var NoteService = class {
         degradedReason: null
       };
     } catch {
-      const hit = readNote(path6);
+      const hit = readNote(path7);
       if (!hit) {
-        throw new DomainError("NOT_FOUND", `Note not found: ${path6}`);
+        throw new DomainError("NOT_FOUND", `Note not found: ${path7}`);
       }
       return {
         content: hit.content,
@@ -608,26 +611,26 @@ var NoteService = class {
       };
     }
   }
-  async write(path6, content) {
-    if (!path6) {
+  async write(path7, content) {
+    if (!path7) {
       throw new DomainError("VALIDATION", "path is required");
     }
     try {
-      await this.pluginClient.send("notes.write", { path: path6, content });
-      const record = writeNote(path6, content);
-      this.semanticService?.upsert(path6, record.content, Date.now());
+      await this.pluginClient.send("notes.write", { path: path7, content });
+      const record = writeNote(path7, content);
+      this.semanticService?.upsert(path7, record.content, Date.now());
       return {
-        path: path6,
+        path: path7,
         updatedAt: record.updatedAt,
         size: record.size,
         degraded: false,
         degradedReason: null
       };
     } catch {
-      const record = writeNote(path6, content);
-      this.semanticService?.upsert(path6, record.content, Date.now());
+      const record = writeNote(path7, content);
+      this.semanticService?.upsert(path7, record.content, Date.now());
       return {
-        path: path6,
+        path: path7,
         updatedAt: record.updatedAt,
         size: record.size,
         degraded: true,
@@ -635,30 +638,30 @@ var NoteService = class {
       };
     }
   }
-  async delete(path6) {
+  async delete(path7) {
     try {
-      await this.pluginClient.send("notes.delete", { path: path6 });
-      this.semanticService?.remove(path6);
+      await this.pluginClient.send("notes.delete", { path: path7 });
+      this.semanticService?.remove(path7);
       return { deleted: true, degraded: false, degradedReason: null };
     } catch (error) {
-      const deleted = deleteNote(path6);
+      const deleted = deleteNote(path7);
       if (deleted) {
-        this.semanticService?.remove(path6);
+        this.semanticService?.remove(path7);
         return { deleted: true, degraded: true, degradedReason: "plugin_unavailable" };
       }
       if (error instanceof DomainError && error.code === "NOT_FOUND") {
         throw error;
       }
-      throw new DomainError("NOT_FOUND", `Note not found: ${path6}`);
+      throw new DomainError("NOT_FOUND", `Note not found: ${path7}`);
     }
   }
-  async updateMetadata(path6, metadata) {
+  async updateMetadata(path7, metadata) {
     try {
-      await this.pluginClient.send("metadata.update", { path: path6, metadata });
-      const record = updateMetadata(path6, metadata);
-      this.semanticService?.upsert(path6, record.content, Date.now());
+      await this.pluginClient.send("metadata.update", { path: path7, metadata });
+      const record = updateMetadata(path7, metadata);
+      this.semanticService?.upsert(path7, record.content, Date.now());
       return {
-        path: path6,
+        path: path7,
         metadata: record.metadata,
         updatedAt: record.updatedAt,
         size: record.size,
@@ -666,10 +669,10 @@ var NoteService = class {
         degradedReason: null
       };
     } catch {
-      const record = updateMetadata(path6, metadata);
-      this.semanticService?.upsert(path6, record.content, Date.now());
+      const record = updateMetadata(path7, metadata);
+      this.semanticService?.upsert(path7, record.content, Date.now());
       return {
-        path: path6,
+        path: path7,
         metadata: record.metadata,
         updatedAt: record.updatedAt,
         size: record.size,
@@ -678,10 +681,10 @@ var NoteService = class {
       };
     }
   }
-  list(path6, options) {
-    const result = listEntries(path6, options);
+  list(path7, options) {
+    const result = listEntries(path7, options);
     return {
-      path: path6,
+      path: path7,
       ...result,
       degraded: false,
       degradedReason: null
@@ -923,8 +926,8 @@ var IndexingQueue = class {
       path: to
     };
   }
-  removePath(path6) {
-    const existingIndex = this.queue.findIndex((item) => item.path === path6);
+  removePath(path7) {
+    const existingIndex = this.queue.findIndex((item) => item.path === path7);
     if (existingIndex !== -1) {
       this.queue.splice(existingIndex, 1);
     }
@@ -1350,26 +1353,26 @@ var SemanticService = class {
   constructor(preferRemote = false, vaultPath = "", configDir = "") {
     this.provider = createEmbeddingProvider(preferRemote, vaultPath, configDir);
   }
-  replaceNoteChunks(path6, nextChunks) {
-    const previousChunkIds = this.chunkIdsByPath.get(path6) ?? [];
+  replaceNoteChunks(path7, nextChunks) {
+    const previousChunkIds = this.chunkIdsByPath.get(path7) ?? [];
     for (const chunkId of previousChunkIds) {
       this.chunks.delete(chunkId);
     }
     this.chunkIdsByPath.set(
-      path6,
+      path7,
       nextChunks.map((chunk) => chunk.id)
     );
     for (const chunk of nextChunks) {
       this.chunks.set(chunk.id, chunk);
     }
   }
-  upsert(path6, content, updatedAt) {
-    const existingChunkIds = this.chunkIdsByPath.get(path6);
+  upsert(path7, content, updatedAt) {
+    const existingChunkIds = this.chunkIdsByPath.get(path7);
     const existingUpdatedAt = existingChunkIds && existingChunkIds.length > 0 ? this.chunks.get(existingChunkIds[0])?.updatedAt ?? 0 : 0;
     if (existingUpdatedAt >= updatedAt) {
       return false;
     }
-    return this.queue.enqueue({ path: path6, content, updatedAt });
+    return this.queue.enqueue({ path: path7, content, updatedAt });
   }
   flushIndex(maxItems = 25) {
     return this.queue.process(async (job) => {
@@ -1392,13 +1395,13 @@ var SemanticService = class {
       this.replaceNoteChunks(job.path, nextChunks);
     }, maxItems);
   }
-  remove(path6) {
-    const existingChunkIds = this.chunkIdsByPath.get(path6) ?? [];
+  remove(path7) {
+    const existingChunkIds = this.chunkIdsByPath.get(path7) ?? [];
     for (const chunkId of existingChunkIds) {
       this.chunks.delete(chunkId);
     }
-    this.chunkIdsByPath.delete(path6);
-    this.queue.removePath(path6);
+    this.chunkIdsByPath.delete(path7);
+    this.queue.removePath(path7);
   }
   movePath(from, to) {
     const existingChunkIds = this.chunkIdsByPath.get(from) ?? [];
@@ -2118,9 +2121,31 @@ function registerSchemaSummaryResource(server) {
 }
 
 // src/domain/toolResult.ts
-function okResult(summary, structuredContent) {
+function buildStructuredPreview(structuredContent) {
+  if (structuredContent === null || structuredContent === void 0) {
+    return null;
+  }
+  if (typeof structuredContent !== "object") {
+    return String(structuredContent);
+  }
+  const serialized = JSON.stringify(structuredContent, null, 2);
+  if (!serialized) {
+    return null;
+  }
+  const maxChars = 4e3;
+  if (serialized.length <= maxChars) {
+    return serialized;
+  }
+  return `${serialized.slice(0, maxChars)}
+\u2026`;
+}
+function okResult(summary, structuredContent, detailText) {
+  const preview = detailText ?? buildStructuredPreview(structuredContent);
+  const text = preview ? `${summary}
+
+${preview}` : summary;
   return {
-    content: [{ type: "text", text: summary }],
+    content: [{ type: "text", text }],
     structuredContent
   };
 }
@@ -2310,14 +2335,6 @@ var lexicalSearchInputSchema = z5.object({
     tags: z5.boolean().optional().default(false),
     frontmatterKeys: z5.array(z5.string().min(1)).optional().default([])
   }).optional().default({ snippet: true, matchLocations: true, tags: false, frontmatterKeys: [] })
-}).superRefine((value, ctx) => {
-  if (!value.query && !value.filters) {
-    ctx.addIssue({
-      code: z5.ZodIssueCode.custom,
-      message: "Either query or filters is required",
-      path: ["query"]
-    });
-  }
 });
 var semanticSearchInputSchema = z5.object({
   query: z5.string().min(1),
@@ -2777,6 +2794,29 @@ function toMutationSummary(status, degraded) {
   const mode = degraded ? "degraded" : "normal";
   return status === "noOp" ? `No edit applied (${mode})` : `Edit applied (${mode})`;
 }
+function anchorToText(anchor) {
+  switch (anchor.type) {
+    case "heading":
+      return `heading:${anchor.headingPath?.join(" > ") ?? ""}`;
+    case "block":
+      return `block:${anchor.blockId ?? ""}`;
+    case "line":
+      return `line:${anchor.startLine ?? 0}-${anchor.endLine ?? 0}`;
+    case "frontmatter":
+      return "frontmatter";
+    case "full":
+      return "full";
+    default:
+      return anchor.type;
+  }
+}
+function previewText(text, maxChars = 240) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(maxChars - 1, 0))}\u2026`;
+}
 function registerReadEditTools(server, noteService, editorService) {
   server.registerTool(
     TOOL_NAMES.READ_NOTE,
@@ -2810,18 +2850,6 @@ function registerReadEditTools(server, noteService, editorService) {
             anchor: resolved.anchor,
             totalLines: resolved.totalLines
           },
-          content: {
-            text: truncated.text,
-            truncated: truncated.truncated,
-            charsReturned: truncated.text.length
-          },
-          metadata,
-          documentMap: params.include.documentMap ? buildDocumentMap(result.content) : null,
-          readMoreHint: truncated.truncated ? {
-            note: params.note,
-            anchor: resolved.anchor,
-            maxChars: Math.min(params.maxChars * 2, 2e4)
-          } : null,
           editTarget: {
             source: "note",
             note: params.note,
@@ -2836,10 +2864,31 @@ function registerReadEditTools(server, noteService, editorService) {
             revision,
             currentText: result.content.length <= params.maxChars ? result.content : void 0
           },
+          content: {
+            text: truncated.text,
+            truncated: truncated.truncated,
+            charsReturned: truncated.text.length
+          },
+          metadata,
+          documentMap: params.include.documentMap ? buildDocumentMap(result.content) : null,
+          readMoreHint: truncated.truncated ? {
+            note: params.note,
+            anchor: resolved.anchor,
+            maxChars: Math.min(params.maxChars * 2, 2e4)
+          } : null,
           degraded: result.degraded,
           degradedReason: result.degradedReason
         };
-        return okResult(`Read note (${result.degraded ? "degraded" : "normal"})`, payload);
+        const detail = [
+          `note=${payload.note.path}`,
+          `anchor=${anchorToText(payload.selection.anchor)}`,
+          `revision=${payload.revision}`,
+          `truncated=${payload.content.truncated}`,
+          `content="${previewText(payload.content.text)}"`,
+          `editTarget=${JSON.stringify(payload.editTarget)}`,
+          `documentEditTarget=${JSON.stringify(payload.documentEditTarget)}`
+        ].join("\n");
+        return okResult(`Read note (${result.degraded ? "degraded" : "normal"})`, payload, detail);
       } catch (error) {
         const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "read note failed");
         return errorResult(domainError);
@@ -2895,16 +2944,25 @@ function registerReadEditTools(server, noteService, editorService) {
             currentText: normalizedContext.content
           }
         };
+        const payload = {
+          ...normalizedContext,
+          editTargets,
+          degraded: result.degraded,
+          degradedReason: result.degradedReason,
+          noActiveEditor: result.noActiveEditor,
+          editorState: result.noActiveEditor ? "none" : "active"
+        };
+        const availableTargets = payload.editTargets ? Object.entries(payload.editTargets).filter(([, value]) => value).map(([key]) => key) : [];
         return okResult(
           result.noActiveEditor ? `No active editor (${result.degraded ? "degraded" : "normal"})` : `Read active context (${result.degraded ? "degraded" : "normal"})`,
-          {
-            ...normalizedContext,
-            degraded: result.degraded,
-            degradedReason: result.degradedReason,
-            noActiveEditor: result.noActiveEditor,
-            editorState: result.noActiveEditor ? "none" : "active",
-            editTargets
-          }
+          payload,
+          [
+            `activeFile=${payload.activeFile ?? "null"}`,
+            `cursor=${payload.cursor ? `${payload.cursor.line}:${payload.cursor.ch}` : "null"}`,
+            `selection="${previewText(payload.selection, 120)}"`,
+            `availableTargets=${availableTargets.join(",") || "none"}`,
+            `editTargets=${JSON.stringify(payload.editTargets)}`
+          ].join("\n")
         );
       } catch (error) {
         const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "read active context failed");
@@ -2933,7 +2991,7 @@ function registerReadEditTools(server, noteService, editorService) {
           compareExpectedText(resolved2.text, params.target.currentText);
           const changed2 = applyEditChange(resolved2.text, params.change);
           if (changed2.nextText === resolved2.text) {
-            return okResult("No edit applied (normal)", {
+            const payload3 = {
               status: "noOp",
               target: {
                 source: "note",
@@ -2950,7 +3008,17 @@ function registerReadEditTools(server, noteService, editorService) {
                 input: { note: params.target.note, anchor: resolved2.anchor }
               },
               warnings: changed2.warnings
-            });
+            };
+            return okResult(
+              "No edit applied (normal)",
+              payload3,
+              [
+                `status=${payload3.status}`,
+                `target.note=${payload3.target.note}`,
+                `target.anchor=${anchorToText(payload3.target.anchor)}`,
+                `preview.before="${previewText(payload3.preview.before)}"`
+              ].join("\n")
+            );
           }
           const nextContent = replaceResolvedSelection(current2.content, resolved2, changed2.nextText);
           const writeResult = await noteService.write(params.target.note, nextContent);
@@ -2959,7 +3027,7 @@ function registerReadEditTools(server, noteService, editorService) {
             writeResult.updatedAt,
             writeResult.size
           );
-          return okResult(`Edit applied (${writeResult.degraded ? "degraded" : "normal"})`, {
+          const payload2 = {
             status: "applied",
             target: {
               source: "note",
@@ -2976,7 +3044,18 @@ function registerReadEditTools(server, noteService, editorService) {
               input: { note: params.target.note, anchor: resolved2.anchor }
             },
             warnings: changed2.warnings
-          });
+          };
+          return okResult(
+            `Edit applied (${writeResult.degraded ? "degraded" : "normal"})`,
+            payload2,
+            [
+              `status=${payload2.status}`,
+              `target.note=${payload2.target.note}`,
+              `target.anchor=${anchorToText(payload2.target.anchor)}`,
+              `preview.before="${previewText(payload2.preview.before)}"`,
+              `preview.after="${previewText(payload2.preview.after)}"`
+            ].join("\n")
+          );
         }
         const current = await editorService.getContext();
         if (current.noActiveEditor || !current.context.activeFile) {
@@ -2994,7 +3073,7 @@ function registerReadEditTools(server, noteService, editorService) {
             insertedText,
             params.target.anchor.position
           );
-          return okResult(toMutationSummary("applied", insertResult.degraded), {
+          const payload2 = {
             status: "applied",
             target: {
               source: "active",
@@ -3011,13 +3090,23 @@ function registerReadEditTools(server, noteService, editorService) {
               input: {}
             },
             warnings: []
-          });
+          };
+          return okResult(
+            toMutationSummary("applied", insertResult.degraded),
+            payload2,
+            [
+              `status=${payload2.status}`,
+              `target.activeFile=${payload2.target.activeFile ?? "null"}`,
+              `target.anchor=${payload2.target.anchor.type}`,
+              `preview.after="${previewText(payload2.preview.after)}"`
+            ].join("\n")
+          );
         }
         const resolved = resolveActiveSelection(current.context.content, params.target.anchor);
         compareExpectedText(resolved.text, params.target.currentText);
         const changed = applyEditChange(resolved.text, params.change);
         if (changed.nextText === resolved.text) {
-          return okResult(toMutationSummary("noOp", current.degraded), {
+          const payload2 = {
             status: "noOp",
             target: {
               source: "active",
@@ -3034,13 +3123,23 @@ function registerReadEditTools(server, noteService, editorService) {
               input: {}
             },
             warnings: changed.warnings
-          });
+          };
+          return okResult(
+            toMutationSummary("noOp", current.degraded),
+            payload2,
+            [
+              `status=${payload2.status}`,
+              `target.activeFile=${payload2.target.activeFile ?? "null"}`,
+              `target.anchor=${payload2.target.anchor.type}`,
+              `preview.before="${previewText(payload2.preview.before)}"`
+            ].join("\n")
+          );
         }
         if (!resolved.range) {
           throw new DomainError("VALIDATION", "Resolved active target does not include a range");
         }
         const replaceResult = await editorService.replaceRange(changed.nextText, resolved.range);
-        return okResult(toMutationSummary("applied", replaceResult.degraded), {
+        const payload = {
           status: "applied",
           target: {
             source: "active",
@@ -3057,7 +3156,18 @@ function registerReadEditTools(server, noteService, editorService) {
             input: {}
           },
           warnings: changed.warnings
-        });
+        };
+        return okResult(
+          toMutationSummary("applied", replaceResult.degraded),
+          payload,
+          [
+            `status=${payload.status}`,
+            `target.activeFile=${payload.target.activeFile ?? "null"}`,
+            `target.anchor=${payload.target.anchor.type}`,
+            `preview.before="${previewText(payload.preview.before)}"`,
+            `preview.after="${previewText(payload.preview.after)}"`
+          ].join("\n")
+        );
       } catch (error) {
         const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "edit failed");
         return errorResult(domainError);
@@ -3132,6 +3242,9 @@ function registerSearchTools(server, _noteService, semanticService) {
     },
     (params) => {
       try {
+        if (!params.query?.trim() && !params.filters) {
+          throw new DomainError("VALIDATION", "Either query or filters is required");
+        }
         const normalizedQuery = params.query?.trim().toLowerCase() ?? "";
         const notes = listNotes().filter((note) => !params.pathPrefix || note.path.startsWith(params.pathPrefix)).map((note) => {
           const metadata = parseFrontmatter(note.content);
@@ -3181,7 +3294,7 @@ function registerSearchTools(server, _noteService, semanticService) {
         }
         const results = notes.slice(startIndex, startIndex + params.limit);
         const hasMore = startIndex + results.length < notes.length;
-        return okResult(`Found ${results.length} matching notes`, {
+        const payload = {
           query: params.query ?? null,
           sort: params.sort,
           totalMatches: notes.length,
@@ -3224,7 +3337,15 @@ function registerSearchTools(server, _noteService, semanticService) {
               }
             };
           })
-        });
+        };
+        const detailLines = [
+          `returned=${payload.returned} total=${payload.totalMatches} sort=${payload.sort} hasMore=${payload.hasMore}`,
+          ...payload.results.slice(0, 10).map((result, index) => {
+            const snippet = result.snippet?.text.replace(/\s+/g, " ").trim();
+            return `${index + 1}. ${result.note.path} score=${result.score} fields=${result.matchedFields.join(",") || "none"}${snippet ? ` snippet="${snippet}"` : ""} readHint=${JSON.stringify(result.readHint)}`;
+          })
+        ];
+        return okResult(`Found ${results.length} matching notes`, payload, detailLines.join("\n"));
       } catch (error) {
         const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "lexical search failed");
         return errorResult(domainError);
@@ -3278,7 +3399,7 @@ function registerSearchTools(server, _noteService, semanticService) {
           perNote.set(match.path, count + 1);
           return true;
         }).slice(0, params.topK);
-        return okResult(`Found ${filtered.length} semantic matches`, {
+        const payload = {
           query: params.query,
           returned: filtered.length,
           indexStatus: searchResult.indexStatus,
@@ -3332,16 +3453,33 @@ function registerSearchTools(server, _noteService, semanticService) {
               }
             };
           })
-        });
+        };
+        const detailLines = [
+          `returned=${payload.returned} indexedNotes=${payload.indexStatus.indexedNoteCount} indexedChunks=${payload.indexStatus.indexedChunkCount} pending=${payload.indexStatus.pendingCount}`,
+          ...payload.results.slice(0, 10).map((result) => {
+            const excerpt = result.chunk.text.replace(/\s+/g, " ").trim();
+            return `${result.rank}. ${result.note.path} score=${result.score.toFixed(3)} lines=${result.anchor.startLine}-${result.anchor.endLine} excerpt="${excerpt}" readHint=${JSON.stringify(result.readHint)}`;
+          })
+        ];
+        return okResult(
+          `Found ${filtered.length} semantic matches`,
+          payload,
+          detailLines.join("\n")
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (message.includes("Model not found locally")) {
-          return okResult("Semantic search unavailable: Model not found locally.", {
+          const payload = {
             query: params.query,
             returned: 0,
             indexStatus: semanticService.getIndexStatus(),
             results: []
-          });
+          };
+          return okResult(
+            "Semantic search unavailable: Model not found locally.",
+            payload,
+            `returned=0 indexedNotes=${payload.indexStatus.indexedNoteCount} indexedChunks=${payload.indexStatus.indexedChunkCount} pending=${payload.indexStatus.pendingCount}`
+          );
         }
         const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", `semantic search failed: ${message}`);
         return errorResult(domainError);
@@ -3351,10 +3489,21 @@ function registerSearchTools(server, _noteService, semanticService) {
 }
 
 // src/server.ts
+function readPackageVersion() {
+  try {
+    const currentDir = path6.dirname(fileURLToPath(import.meta.url));
+    const packageJsonPath = path6.resolve(currentDir, "../package.json");
+    const parsed = JSON.parse(fs5.readFileSync(packageJsonPath, "utf8"));
+    return typeof parsed.version === "string" ? parsed.version : "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+var SERVER_VERSION = readPackageVersion();
 function createServer(runtimePaths, pluginClient = new PluginClient()) {
   const server = new McpServer({
     name: "obsidian-companion-mcp",
-    version: "0.1.0"
+    version: SERVER_VERSION
   });
   const useRemote = process.env.USE_REMOTE_EMBEDDING === "true";
   const semanticService = new SemanticService(

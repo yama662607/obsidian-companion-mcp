@@ -120,6 +120,10 @@ export function registerSearchTools(
     },
     (params) => {
       try {
+        if (!params.query?.trim() && !params.filters) {
+          throw new DomainError("VALIDATION", "Either query or filters is required");
+        }
+
         const normalizedQuery = params.query?.trim().toLowerCase() ?? "";
         const notes = fallback
           .listNotes()
@@ -184,7 +188,7 @@ export function registerSearchTools(
 
         const results = notes.slice(startIndex, startIndex + params.limit);
         const hasMore = startIndex + results.length < notes.length;
-        return okResult(`Found ${results.length} matching notes`, {
+        const payload = {
           query: params.query ?? null,
           sort: params.sort,
           totalMatches: notes.length,
@@ -243,7 +247,17 @@ export function registerSearchTools(
               },
             };
           }),
-        });
+        };
+
+        const detailLines = [
+          `returned=${payload.returned} total=${payload.totalMatches} sort=${payload.sort} hasMore=${payload.hasMore}`,
+          ...payload.results.slice(0, 10).map((result, index) => {
+            const snippet = result.snippet?.text.replace(/\s+/g, " ").trim();
+            return `${index + 1}. ${result.note.path} score=${result.score} fields=${result.matchedFields.join(",") || "none"}${snippet ? ` snippet="${snippet}"` : ""} readHint=${JSON.stringify(result.readHint)}`;
+          }),
+        ];
+
+        return okResult(`Found ${results.length} matching notes`, payload, detailLines.join("\n"));
       } catch (error) {
         const domainError =
           error instanceof DomainError
@@ -318,7 +332,7 @@ export function registerSearchTools(
           })
           .slice(0, params.topK);
 
-        return okResult(`Found ${filtered.length} semantic matches`, {
+        const payload = {
           query: params.query,
           returned: filtered.length,
           indexStatus: searchResult.indexStatus,
@@ -384,16 +398,35 @@ export function registerSearchTools(
               },
             };
           }),
-        });
+        };
+
+        const detailLines = [
+          `returned=${payload.returned} indexedNotes=${payload.indexStatus.indexedNoteCount} indexedChunks=${payload.indexStatus.indexedChunkCount} pending=${payload.indexStatus.pendingCount}`,
+          ...payload.results.slice(0, 10).map((result) => {
+            const excerpt = result.chunk.text.replace(/\s+/g, " ").trim();
+            return `${result.rank}. ${result.note.path} score=${result.score.toFixed(3)} lines=${result.anchor.startLine}-${result.anchor.endLine} excerpt="${excerpt}" readHint=${JSON.stringify(result.readHint)}`;
+          }),
+        ];
+
+        return okResult(
+          `Found ${filtered.length} semantic matches`,
+          payload,
+          detailLines.join("\n"),
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (message.includes("Model not found locally")) {
-          return okResult("Semantic search unavailable: Model not found locally.", {
+          const payload = {
             query: params.query,
             returned: 0,
             indexStatus: semanticService.getIndexStatus(),
             results: [],
-          });
+          };
+          return okResult(
+            "Semantic search unavailable: Model not found locally.",
+            payload,
+            `returned=0 indexedNotes=${payload.indexStatus.indexedNoteCount} indexedChunks=${payload.indexStatus.indexedChunkCount} pending=${payload.indexStatus.pendingCount}`,
+          );
         }
 
         const domainError =

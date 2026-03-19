@@ -149,45 +149,35 @@ const frontmatterEqualsFilterSchema = z.object({
   value: z.union([z.string(), z.number(), z.boolean()]),
 });
 
-export const lexicalSearchInputSchema = z
-  .object({
-    query: z.string().trim().optional(),
-    pathPrefix: z.string().optional(),
-    filters: z
-      .object({
-        tagsAny: z.array(z.string().min(1)).optional(),
-        tagsAll: z.array(z.string().min(1)).optional(),
-        frontmatterEquals: z.array(frontmatterEqualsFilterSchema).optional(),
-        modifiedAfter: isoDateSchema.optional(),
-        modifiedBefore: isoDateSchema.optional(),
-        filenameGlob: z.string().optional(),
-      })
-      .optional(),
-    sort: z
-      .enum(["relevance", "modifiedDesc", "modifiedAsc", "pathAsc"])
-      .optional()
-      .default("relevance"),
-    limit: limitSchema.optional().default(10),
-    cursor: z.string().optional(),
-    include: z
-      .object({
-        snippet: z.boolean().optional().default(true),
-        matchLocations: z.boolean().optional().default(true),
-        tags: z.boolean().optional().default(false),
-        frontmatterKeys: z.array(z.string().min(1)).optional().default([]),
-      })
-      .optional()
-      .default({ snippet: true, matchLocations: true, tags: false, frontmatterKeys: [] }),
-  })
-  .superRefine((value, ctx) => {
-    if (!value.query && !value.filters) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Either query or filters is required",
-        path: ["query"],
-      });
-    }
-  });
+export const lexicalSearchInputSchema = z.object({
+  query: z.string().trim().optional(),
+  pathPrefix: z.string().optional(),
+  filters: z
+    .object({
+      tagsAny: z.array(z.string().min(1)).optional(),
+      tagsAll: z.array(z.string().min(1)).optional(),
+      frontmatterEquals: z.array(frontmatterEqualsFilterSchema).optional(),
+      modifiedAfter: isoDateSchema.optional(),
+      modifiedBefore: isoDateSchema.optional(),
+      filenameGlob: z.string().optional(),
+    })
+    .optional(),
+  sort: z
+    .enum(["relevance", "modifiedDesc", "modifiedAsc", "pathAsc"])
+    .optional()
+    .default("relevance"),
+  limit: limitSchema.optional().default(10),
+  cursor: z.string().optional(),
+  include: z
+    .object({
+      snippet: z.boolean().optional().default(true),
+      matchLocations: z.boolean().optional().default(true),
+      tags: z.boolean().optional().default(false),
+      frontmatterKeys: z.array(z.string().min(1)).optional().default([]),
+    })
+    .optional()
+    .default({ snippet: true, matchLocations: true, tags: false, frontmatterKeys: [] }),
+});
 
 export const semanticSearchInputSchema = z.object({
   query: z.string().min(1),

@@ -135,6 +135,8 @@ test("server wiring registers search, read/edit, and lifecycle tool groups", () 
   assert.match(source, /registerSearchTools/);
   assert.match(source, /registerReadEditTools/);
   assert.match(source, /registerNoteTools/);
+  assert.match(source, /readPackageVersion/);
+  assert.doesNotMatch(source, /version:\s*"0\.1\.0"/);
   assert.doesNotMatch(source, /registerEditorTools/);
   assert.doesNotMatch(source, /registerSemanticSearchTool/);
 });

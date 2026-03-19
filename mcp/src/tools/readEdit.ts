@@ -54,6 +54,37 @@ function toMutationSummary(status: "applied" | "noOp", degraded: boolean): strin
   return status === "noOp" ? `No edit applied (${mode})` : `Edit applied (${mode})`;
 }
 
+function anchorToText(anchor: {
+  type: string;
+  headingPath?: string[];
+  blockId?: string;
+  startLine?: number;
+  endLine?: number;
+}): string {
+  switch (anchor.type) {
+    case "heading":
+      return `heading:${anchor.headingPath?.join(" > ") ?? ""}`;
+    case "block":
+      return `block:${anchor.blockId ?? ""}`;
+    case "line":
+      return `line:${anchor.startLine ?? 0}-${anchor.endLine ?? 0}`;
+    case "frontmatter":
+      return "frontmatter";
+    case "full":
+      return "full";
+    default:
+      return anchor.type;
+  }
+}
+
+function previewText(text: string, maxChars = 240): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(maxChars - 1, 0))}…`;
+}
+
 export function registerReadEditTools(
   server: McpServer,
   noteService: NoteService,
@@ -95,20 +126,6 @@ export function registerReadEditTools(
             anchor: resolved.anchor,
             totalLines: resolved.totalLines,
           },
-          content: {
-            text: truncated.text,
-            truncated: truncated.truncated,
-            charsReturned: truncated.text.length,
-          },
-          metadata,
-          documentMap: params.include.documentMap ? buildDocumentMap(result.content) : null,
-          readMoreHint: truncated.truncated
-            ? {
-                note: params.note,
-                anchor: resolved.anchor,
-                maxChars: Math.min(params.maxChars * 2, 20_000),
-              }
-            : null,
           editTarget: {
             source: "note" as const,
             note: params.note,
@@ -123,10 +140,33 @@ export function registerReadEditTools(
             revision,
             currentText: result.content.length <= params.maxChars ? result.content : undefined,
           },
+          content: {
+            text: truncated.text,
+            truncated: truncated.truncated,
+            charsReturned: truncated.text.length,
+          },
+          metadata,
+          documentMap: params.include.documentMap ? buildDocumentMap(result.content) : null,
+          readMoreHint: truncated.truncated
+            ? {
+                note: params.note,
+                anchor: resolved.anchor,
+                maxChars: Math.min(params.maxChars * 2, 20_000),
+              }
+            : null,
           degraded: result.degraded,
           degradedReason: result.degradedReason,
         };
-        return okResult(`Read note (${result.degraded ? "degraded" : "normal"})`, payload);
+        const detail = [
+          `note=${payload.note.path}`,
+          `anchor=${anchorToText(payload.selection.anchor)}`,
+          `revision=${payload.revision}`,
+          `truncated=${payload.content.truncated}`,
+          `content="${previewText(payload.content.text)}"`,
+          `editTarget=${JSON.stringify(payload.editTarget)}`,
+          `documentEditTarget=${JSON.stringify(payload.documentEditTarget)}`,
+        ].join("\n");
+        return okResult(`Read note (${result.degraded ? "degraded" : "normal"})`, payload, detail);
       } catch (error) {
         const domainError =
           error instanceof DomainError ? error : new DomainError("INTERNAL", "read note failed");
@@ -195,18 +235,33 @@ export function registerReadEditTools(
               },
             };
 
+        const payload = {
+          ...normalizedContext,
+          editTargets,
+          degraded: result.degraded,
+          degradedReason: result.degradedReason,
+          noActiveEditor: result.noActiveEditor,
+          editorState: result.noActiveEditor ? ("none" as const) : ("active" as const),
+        };
+
+        const availableTargets = payload.editTargets
+          ? Object.entries(payload.editTargets)
+              .filter(([, value]) => value)
+              .map(([key]) => key)
+          : [];
+
         return okResult(
           result.noActiveEditor
             ? `No active editor (${result.degraded ? "degraded" : "normal"})`
             : `Read active context (${result.degraded ? "degraded" : "normal"})`,
-          {
-            ...normalizedContext,
-            degraded: result.degraded,
-            degradedReason: result.degradedReason,
-            noActiveEditor: result.noActiveEditor,
-            editorState: result.noActiveEditor ? ("none" as const) : ("active" as const),
-            editTargets,
-          },
+          payload,
+          [
+            `activeFile=${payload.activeFile ?? "null"}`,
+            `cursor=${payload.cursor ? `${payload.cursor.line}:${payload.cursor.ch}` : "null"}`,
+            `selection="${previewText(payload.selection, 120)}"`,
+            `availableTargets=${availableTargets.join(",") || "none"}`,
+            `editTargets=${JSON.stringify(payload.editTargets)}`,
+          ].join("\n"),
         );
       } catch (error) {
         const domainError =
@@ -241,7 +296,7 @@ export function registerReadEditTools(
           const changed = applyEditChange(resolved.text, params.change);
 
           if (changed.nextText === resolved.text) {
-            return okResult("No edit applied (normal)", {
+            const payload = {
               status: "noOp" as const,
               target: {
                 source: "note" as const,
@@ -258,7 +313,17 @@ export function registerReadEditTools(
                 input: { note: params.target.note, anchor: resolved.anchor },
               },
               warnings: changed.warnings,
-            });
+            };
+            return okResult(
+              "No edit applied (normal)",
+              payload,
+              [
+                `status=${payload.status}`,
+                `target.note=${payload.target.note}`,
+                `target.anchor=${anchorToText(payload.target.anchor)}`,
+                `preview.before="${previewText(payload.preview.before)}"`,
+              ].join("\n"),
+            );
           }
 
           const nextContent = replaceResolvedSelection(current.content, resolved, changed.nextText);
@@ -269,7 +334,7 @@ export function registerReadEditTools(
             writeResult.size,
           );
 
-          return okResult(`Edit applied (${writeResult.degraded ? "degraded" : "normal"})`, {
+          const payload = {
             status: "applied" as const,
             target: {
               source: "note" as const,
@@ -286,7 +351,18 @@ export function registerReadEditTools(
               input: { note: params.target.note, anchor: resolved.anchor },
             },
             warnings: changed.warnings,
-          });
+          };
+          return okResult(
+            `Edit applied (${writeResult.degraded ? "degraded" : "normal"})`,
+            payload,
+            [
+              `status=${payload.status}`,
+              `target.note=${payload.target.note}`,
+              `target.anchor=${anchorToText(payload.target.anchor)}`,
+              `preview.before="${previewText(payload.preview.before)}"`,
+              `preview.after="${previewText(payload.preview.after)}"`,
+            ].join("\n"),
+          );
         }
 
         const current = await editorService.getContext();
@@ -310,7 +386,7 @@ export function registerReadEditTools(
             insertedText,
             params.target.anchor.position,
           );
-          return okResult(toMutationSummary("applied", insertResult.degraded), {
+          const payload = {
             status: "applied" as const,
             target: {
               source: "active" as const,
@@ -327,7 +403,17 @@ export function registerReadEditTools(
               input: {},
             },
             warnings: [],
-          });
+          };
+          return okResult(
+            toMutationSummary("applied", insertResult.degraded),
+            payload,
+            [
+              `status=${payload.status}`,
+              `target.activeFile=${payload.target.activeFile ?? "null"}`,
+              `target.anchor=${payload.target.anchor.type}`,
+              `preview.after="${previewText(payload.preview.after)}"`,
+            ].join("\n"),
+          );
         }
 
         const resolved = resolveActiveSelection(current.context.content, params.target.anchor);
@@ -335,7 +421,7 @@ export function registerReadEditTools(
         const changed = applyEditChange(resolved.text, params.change);
 
         if (changed.nextText === resolved.text) {
-          return okResult(toMutationSummary("noOp", current.degraded), {
+          const payload = {
             status: "noOp" as const,
             target: {
               source: "active" as const,
@@ -352,7 +438,17 @@ export function registerReadEditTools(
               input: {},
             },
             warnings: changed.warnings,
-          });
+          };
+          return okResult(
+            toMutationSummary("noOp", current.degraded),
+            payload,
+            [
+              `status=${payload.status}`,
+              `target.activeFile=${payload.target.activeFile ?? "null"}`,
+              `target.anchor=${payload.target.anchor.type}`,
+              `preview.before="${previewText(payload.preview.before)}"`,
+            ].join("\n"),
+          );
         }
 
         if (!resolved.range) {
@@ -360,7 +456,7 @@ export function registerReadEditTools(
         }
 
         const replaceResult = await editorService.replaceRange(changed.nextText, resolved.range);
-        return okResult(toMutationSummary("applied", replaceResult.degraded), {
+        const payload = {
           status: "applied" as const,
           target: {
             source: "active" as const,
@@ -377,7 +473,18 @@ export function registerReadEditTools(
             input: {},
           },
           warnings: changed.warnings,
-        });
+        };
+        return okResult(
+          toMutationSummary("applied", replaceResult.degraded),
+          payload,
+          [
+            `status=${payload.status}`,
+            `target.activeFile=${payload.target.activeFile ?? "null"}`,
+            `target.anchor=${payload.target.anchor.type}`,
+            `preview.before="${previewText(payload.preview.before)}"`,
+            `preview.after="${previewText(payload.preview.after)}"`,
+          ].join("\n"),
+        );
       } catch (error) {
         const domainError =
           error instanceof DomainError ? error : new DomainError("INTERNAL", "edit failed");

@@ -25,12 +25,37 @@ export interface ToolFailure {
 
 type McpCompatibleResult = Record<string, unknown>;
 
+function buildStructuredPreview(structuredContent: unknown): string | null {
+  if (structuredContent === null || structuredContent === undefined) {
+    return null;
+  }
+  if (typeof structuredContent !== "object") {
+    return String(structuredContent);
+  }
+
+  const serialized = JSON.stringify(structuredContent, null, 2);
+  if (!serialized) {
+    return null;
+  }
+
+  const maxChars = 4_000;
+  if (serialized.length <= maxChars) {
+    return serialized;
+  }
+
+  return `${serialized.slice(0, maxChars)}\n…`;
+}
+
 export function okResult<TData>(
   summary: string,
   structuredContent: TData,
+  detailText?: string,
 ): ToolSuccess<TData> & McpCompatibleResult {
+  const preview = detailText ?? buildStructuredPreview(structuredContent);
+  const text = preview ? `${summary}\n\n${preview}` : summary;
+
   return {
-    content: [{ type: "text", text: summary }],
+    content: [{ type: "text", text }],
     structuredContent,
   };
 }

@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { HandshakeResult } from "./contracts/protocol";
@@ -29,13 +32,28 @@ export interface ServerRuntime {
   vectorStore: VectorStore;
 }
 
+function readPackageVersion(): string {
+  try {
+    const currentDir = path.dirname(fileURLToPath(import.meta.url));
+    const packageJsonPath = path.resolve(currentDir, "../package.json");
+    const parsed = JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as {
+      version?: unknown;
+    };
+    return typeof parsed.version === "string" ? parsed.version : "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
+const SERVER_VERSION = readPackageVersion();
+
 export function createServer(
   runtimePaths: { vaultPath: string; configDir: string },
   pluginClient = new PluginClient(),
 ): ServerRuntime {
   const server = new McpServer({
     name: "obsidian-companion-mcp",
-    version: "0.1.0",
+    version: SERVER_VERSION,
   });
 
   // Use remote (mock) embedding provider if explicitly requested (e.g. for E2E tests)

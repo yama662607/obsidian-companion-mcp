@@ -159,6 +159,9 @@ test("mcp e2e: final tool surface is discoverable", async (t) => {
   assert.equal(toolByName.get("search_notes")?.annotations?.readOnlyHint, true);
   assert.equal(toolByName.get("semantic_search_notes")?.annotations?.readOnlyHint, true);
   assert.equal(toolByName.get("delete_note")?.annotations?.destructiveHint, true);
+  assert.ok(toolByName.get("search_notes")?.inputSchema?.properties?.query);
+  assert.ok(toolByName.get("read_note")?.inputSchema?.properties?.note);
+  assert.ok(toolByName.get("edit_note")?.inputSchema?.properties?.target);
 });
 
 test("mcp e2e: persisted discovery, read, edit, metadata, and lifecycle flow works", async (t) => {
@@ -191,6 +194,7 @@ test("mcp e2e: persisted discovery, read, edit, metadata, and lifecycle flow wor
   });
   assert.ok(!created.isError);
   assert.equal(created.structuredContent.note.path, notePath);
+  assert.match(created.content[0].text, /runtime-refactor\.md/);
 
   const patched = await session.client.callTool({
     name: "patch_note_metadata",
@@ -224,6 +228,8 @@ test("mcp e2e: persisted discovery, read, edit, metadata, and lifecycle flow wor
   assert.ok(
     !lexical.structuredContent.results[0].snippet.text.includes("# Runtime Refactor\n\n##"),
   );
+  assert.match(lexical.content[0].text, /runtime-refactor\.md/);
+  assert.match(lexical.content[0].text, /readHint=/);
 
   const readHeading = await session.client.callTool({
     name: "read_note",
@@ -245,6 +251,7 @@ test("mcp e2e: persisted discovery, read, edit, metadata, and lifecycle flow wor
   assert.equal(readHeading.structuredContent.editTarget.source, "note");
   assert.equal(readHeading.structuredContent.selection.anchor.type, "heading");
   assert.deepEqual(readHeading.structuredContent.metadata.tags, ["mcp", "e2e"]);
+  assert.match(readHeading.content[0].text, /editTarget=/);
 
   const appended = await session.client.callTool({
     name: "edit_note",
@@ -445,6 +452,7 @@ test("mcp e2e: active context read/edit handoff works against plugin bridge", as
   assert.equal(active.structuredContent.activeFile, "e2e/active.md");
   assert.equal(active.structuredContent.selection, "beta");
   assert.ok(active.structuredContent.editTargets.selection);
+  assert.match(active.content[0].text, /editTargets=/);
 
   const replacedSelection = await session.client.callTool({
     name: "edit_note",
