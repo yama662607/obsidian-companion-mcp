@@ -1,9 +1,12 @@
 # Design Philosophy: Obsidian Companion MCP
 
+> [!WARNING]
+> Archived design note. The current runtime surface is workflow-oriented and documented under `docs/mcp/*.md`.
+
 ## 1. Modular Hybrid Architecture
 We separate the "Heavy Thinking" from the "Thin Interface."
 - **Why Hybrid?**: MCP servers launched by Agents (Claude/Cursor) are short-lived or isolated. They shouldn't handle heavy, persistent tasks like indexing thousands of files every time they start.
-- **Obsidian as the Engine**: We leverage the already-running Obsidian instance. It has the file cache, the UI state, and the user's focus. 
+- **Obsidian as the Engine**: We leverage the already-running Obsidian instance. It has the file cache, the UI state, and the user's focus.
 
 ## 2. Real-Time Context over Raw Files
 Standard MCP servers only see what's on the disk. Our Companion sees what's in the **editor**.

@@ -1,5 +1,8 @@
 # Handoff Guide for the Next Agent
 
+> [!WARNING]
+> Archived onboarding note. The current contract is documented in `docs/mcp/*.md`, `docs/execution/test-prompts/*.md`, and the OpenSpec archive.
+
 ## Context
 You are tasked with implementing the **Obsidian Companion MCP**.
 The architecture is a **Hybrid** one:
