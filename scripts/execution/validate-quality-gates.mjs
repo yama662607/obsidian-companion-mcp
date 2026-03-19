@@ -166,6 +166,8 @@ const ACTIVE_RUNTIME_DOCS = [
 const LEGACY_TOOL_NAME_REGEX =
   /\b(get_note|get_active_context|search_notes_semantic|update_note_metadata|get_index_status)\b/;
 
+const PUBLIC_PACKAGE_DOCS = ["mcp/README.md"];
+
 export function validateActiveRuntimeDocs(repoRoot) {
   const errors = [];
 
@@ -198,6 +200,26 @@ export function validateActiveRuntimeDocs(repoRoot) {
       errors.push(
         "agent-dual-mcp-review-playbook.md still references retired plugin id obsidian-companion-mcp",
       );
+    }
+  }
+
+  return { ok: errors.length === 0, errors };
+}
+
+export function validatePublicPackageDocs(repoRoot) {
+  const errors = [];
+
+  for (const relativePath of PUBLIC_PACKAGE_DOCS) {
+    const filePath = path.join(repoRoot, relativePath);
+    if (!fs.existsSync(filePath)) {
+      errors.push(`Missing public package doc: ${relativePath}`);
+      continue;
+    }
+
+    const source = fs.readFileSync(filePath, "utf8");
+    const legacyMatch = source.match(LEGACY_TOOL_NAME_REGEX);
+    if (legacyMatch) {
+      errors.push(`${relativePath} still references retired tool name: ${legacyMatch[1]}`);
     }
   }
 
@@ -269,6 +291,7 @@ function main() {
     { name: "release-evidence", result: validateReleaseEvidence(repoRoot) },
     { name: "compatibility-evidence", result: validateCompatibilityEvidence(repoRoot) },
     { name: "active-runtime-docs", result: validateActiveRuntimeDocs(repoRoot) },
+    { name: "public-package-docs", result: validatePublicPackageDocs(repoRoot) },
   ];
 
   let hasErrors = false;

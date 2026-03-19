@@ -21,6 +21,23 @@ export interface EditorOperationResult {
 export class EditorService {
   constructor(private readonly pluginClient: PluginClient) {}
 
+  private getFallbackDegradedReason(error: unknown): string {
+    if (!(error instanceof DomainError)) {
+      return "plugin_unavailable";
+    }
+
+    switch (error.code) {
+      case "VALIDATION":
+        return "plugin_validation_fallback_used";
+      case "CONFLICT":
+        return "plugin_conflict_fallback_used";
+      case "INTERNAL":
+        return "plugin_internal_fallback_used";
+      default:
+        return "plugin_unavailable";
+    }
+  }
+
   private context: EditorContext = {
     activeFile: null,
     cursor: null,
@@ -39,11 +56,11 @@ export class EditorService {
         degradedReason: null,
         noActiveEditor: context.activeFile === null,
       };
-    } catch {
+    } catch (error) {
       return {
         context: this.context,
         degraded: true,
-        degradedReason: "plugin_unavailable",
+        degradedReason: this.getFallbackDegradedReason(error),
         noActiveEditor: this.context.activeFile === null,
       };
     }
@@ -87,7 +104,7 @@ export class EditorService {
         degradedReason: null,
         noActiveEditor: context.activeFile === null,
       };
-    } catch {
+    } catch (error) {
       this.context = {
         ...this.context,
         content: `${this.context.content}${text}`,
@@ -96,7 +113,7 @@ export class EditorService {
       return {
         context: this.context,
         degraded: true,
-        degradedReason: "plugin_unavailable",
+        degradedReason: this.getFallbackDegradedReason(error),
         noActiveEditor: this.context.activeFile === null,
       };
     }
@@ -132,11 +149,15 @@ export class EditorService {
         degradedReason: null,
         noActiveEditor: context.activeFile === null,
       };
-    } catch {
+    } catch (error) {
+      const degradedReason =
+        error instanceof DomainError && error.code !== "INTERNAL"
+          ? this.getFallbackDegradedReason(error)
+          : "plugin_unavailable_range_replace_unsupported";
       return {
         context: this.context,
         degraded: true,
-        degradedReason: "plugin_unavailable_range_replace_unsupported",
+        degradedReason,
         noActiveEditor: this.context.activeFile === null,
       };
     }

@@ -9,6 +9,7 @@ import {
   validateAnnotationPolicy,
   validateCompatibilityEvidence,
   validateContractPayloads,
+  validatePublicPackageDocs,
   validateSchemaPolicy,
 } from "./validate-quality-gates.mjs";
 
@@ -118,4 +119,19 @@ test("validateActiveRuntimeDocs rejects retired tool names in active docs", () =
   assert.equal(result.ok, false);
   assert.ok(result.errors.some((error) => error.includes("retired tool name")));
   assert.ok(result.errors.some((error) => error.includes("retired plugin id")));
+});
+
+test("validatePublicPackageDocs rejects retired tool names in package docs", () => {
+  const tempRoot = path.join(process.cwd(), ".tmp", "package-doc-root");
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+  fs.mkdirSync(path.join(tempRoot, "mcp"), { recursive: true });
+  fs.writeFileSync(
+    path.join(tempRoot, "mcp", "README.md"),
+    "Use get_note and search_notes_semantic in your workflow",
+    "utf8",
+  );
+
+  const result = validatePublicPackageDocs(tempRoot);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((error) => error.includes("retired tool name")));
 });

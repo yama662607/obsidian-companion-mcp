@@ -65,6 +65,10 @@ test("active editor read path exposes selectionRange for follow-up edits", () =>
   assert.match(pluginSource, /getCursor\("from"\)/);
   assert.match(pluginSource, /getCursor\("to"\)/);
   assert.match(editorServiceSource, /selectionRange:/);
+  assert.match(editorServiceSource, /private getFallbackDegradedReason/);
+  assert.match(editorServiceSource, /plugin_validation_fallback_used/);
+  assert.match(editorServiceSource, /plugin_conflict_fallback_used/);
+  assert.match(editorServiceSource, /plugin_internal_fallback_used/);
   assert.match(resourceSource, /selectionRange/);
 });
 
@@ -251,6 +255,10 @@ test("fallback storage remains vault-anchored and returns file stats", () => {
   assert.match(source, /size:/);
   assert.match(source, /getNoteStat/);
   assert.match(source, /Path escapes vault root/);
+});
+
+test("legacy note schema module has been removed", () => {
+  assert.equal(fs.existsSync(path.join(repoRoot, "mcp/src/schemas/notes.ts")), false);
 });
 
 test("plugin client preserves structured plugin errors", () => {
