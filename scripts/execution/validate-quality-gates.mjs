@@ -160,6 +160,13 @@ const ACTIVE_RUNTIME_DOCS = [
   "docs/execution/agent-dual-mcp-test-request-prompt.md",
   "docs/execution/agent-review-request-post-vault-hardening-mcp-only.md",
   "docs/execution/agent-dual-mcp-review-playbook.md",
+  "docs/execution/test-prompts/README.md",
+  "docs/execution/test-prompts/master-real-agent.md",
+  "docs/execution/test-prompts/discovery-search.md",
+  "docs/execution/test-prompts/read-edit-integrity.md",
+  "docs/execution/test-prompts/semantic-index-compatibility.md",
+  "docs/execution/test-prompts/fallback-degraded-mode.md",
+  "docs/execution/test-prompts/dual-mcp-cross-review.md",
   "mcp/README.md",
 ];
 

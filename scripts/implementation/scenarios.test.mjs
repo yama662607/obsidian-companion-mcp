@@ -159,6 +159,13 @@ test("active runtime docs use the current tool surface", () => {
     "docs/execution/agent-dual-mcp-test-request-prompt.md",
     "docs/execution/agent-review-request-post-vault-hardening-mcp-only.md",
     "docs/execution/agent-dual-mcp-review-playbook.md",
+    "docs/execution/test-prompts/README.md",
+    "docs/execution/test-prompts/master-real-agent.md",
+    "docs/execution/test-prompts/discovery-search.md",
+    "docs/execution/test-prompts/read-edit-integrity.md",
+    "docs/execution/test-prompts/semantic-index-compatibility.md",
+    "docs/execution/test-prompts/fallback-degraded-mode.md",
+    "docs/execution/test-prompts/dual-mcp-cross-review.md",
   ];
 
   for (const docPath of activeDocs) {
@@ -173,6 +180,30 @@ test("active runtime docs use the current tool surface", () => {
   const dualReview = read("docs/execution/agent-dual-mcp-review-playbook.md");
   assert.match(dualReview, /\bcompanion-mcp\b/);
   assert.doesNotMatch(dualReview, /\bplugin\s+obsidian-companion-mcp\b/i);
+});
+
+test("test prompt pack documents the current public tool surface", () => {
+  const promptFiles = [
+    "docs/execution/test-prompts/README.md",
+    "docs/execution/test-prompts/master-real-agent.md",
+    "docs/execution/test-prompts/discovery-search.md",
+    "docs/execution/test-prompts/read-edit-integrity.md",
+    "docs/execution/test-prompts/semantic-index-compatibility.md",
+    "docs/execution/test-prompts/fallback-degraded-mode.md",
+    "docs/execution/test-prompts/dual-mcp-cross-review.md",
+  ];
+
+  for (const docPath of promptFiles) {
+    const source = read(docPath);
+    assert.doesNotMatch(source, /\bget_note\b/);
+    assert.doesNotMatch(source, /\bget_active_context\b/);
+    assert.doesNotMatch(source, /\bsearch_notes_semantic\b/);
+    assert.doesNotMatch(source, /\bupdate_note_content\b/);
+    assert.doesNotMatch(source, /\binsert_at_cursor\b/);
+    assert.doesNotMatch(source, /\breplace_range\b/);
+    assert.doesNotMatch(source, /\bupdate_note_metadata\b/);
+    assert.doesNotMatch(source, /\bget_index_status\b/);
+  }
 });
 
 test("package README advertises only the current public tool surface", () => {
