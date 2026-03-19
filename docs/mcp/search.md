@@ -278,10 +278,10 @@ Inspect semantic index readiness, queue depth, and bounded pending samples.
 ## `refresh_semantic_index`
 
 **Purpose**  
-semantic index の rebuild / refresh を開始する。
+semantic index の rebuild / refresh を完了まで実行する。
 
 **Description**  
-Queue semantic indexing work and report immediate progress.
+Queue semantic indexing work, flush pending items, and report the final queue state.
 
 **Input**
 
@@ -295,8 +295,8 @@ Queue semantic indexing work and report immediate progress.
 {
   "totalFound": 120,
   "queuedCount": 35,
-  "flushedCount": 5,
-  "pendingCount": 30,
+  "flushedCount": 35,
+  "pendingCount": 0,
   "indexedNoteCount": 120,
   "indexedChunkCount": 860,
   "modelReady": true
@@ -306,4 +306,5 @@ Queue semantic indexing work and report immediate progress.
 **Notes**
 
 - heavy tool なので read-only ではないが destructive でもない
-- 「全部終わった」とは限らず、queue 状態を返す
+- 通常は queue を空にして返す
+- `pendingCount > 0` のまま返る場合は provider/runtime 側の未完了理由を別途確認する

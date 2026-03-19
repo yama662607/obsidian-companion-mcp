@@ -4,12 +4,13 @@
 
 - 最新の just check 成功証跡: docs/execution/evidence/just-check-latest.json
 - 品質ゲートスクリプト結果: node scripts/execution/validate-quality-gates.mjs
+- 互換性 probe 証跡: docs/execution/evidence/compatibility-probes-latest.json
+
+## 手動 sign-off が必要な追加証跡
+
 - 対象フェーズの sign-off 証跡
 - Obsidian 実機での Companion E2E 証跡
 - Dual MCP 併用（Companion + Excalidraw）E2E 証跡
-- text-only client probe 証跡
-- JSON-stringified nested argument probe 証跡
-- legacy persisted state / legacy semantic index probe 証跡
 
 ## Go/No-Go 判定ルール
 
@@ -34,6 +35,7 @@
 - `read_note.anchor` を JSON string で渡しても解釈できる
 - `edit_note.target` / `change` を JSON string で渡しても解釈できる
 - legacy semantic index を load しても `semantic_search_notes` が巨大 payload を返さない
+- large active editor buffer でも `read_active_context` が bounded payload を返す
 
 ## 失敗時の対応
 

@@ -186,7 +186,7 @@ export function registerReadEditTools(
         readOnlyHint: true,
       },
     },
-    async () => {
+    async (params) => {
       try {
         const result = await editorService.getContext();
         const normalizedContext = {
@@ -197,6 +197,8 @@ export function registerReadEditTools(
           selectionRange: result.context.selectionRange ?? null,
           content: typeof result.context.content === "string" ? result.context.content : "",
         };
+        const boundedSelection = truncateText(normalizedContext.selection, params.maxChars);
+        const boundedContent = truncateText(normalizedContext.content, params.maxChars);
 
         const editTargets = result.noActiveEditor
           ? null
@@ -211,7 +213,9 @@ export function registerReadEditTools(
                         range: normalizedContext.selectionRange,
                       },
                       revision: null,
-                      currentText: normalizedContext.selection,
+                      currentText: boundedSelection.truncated
+                        ? undefined
+                        : normalizedContext.selection,
                     }
                   : undefined,
               cursor: normalizedContext.cursor
@@ -231,13 +235,21 @@ export function registerReadEditTools(
                 activeFile: normalizedContext.activeFile,
                 anchor: { type: "full" as const },
                 revision: null,
-                currentText: normalizedContext.content,
+                currentText: boundedContent.truncated ? undefined : normalizedContext.content,
               },
             };
 
         const payload = {
           ...normalizedContext,
+          selection: boundedSelection.text,
+          selectionTruncated: boundedSelection.truncated,
+          selectionCharsReturned: boundedSelection.text.length,
+          selectionTotalChars: normalizedContext.selection.length,
           editTargets,
+          content: boundedContent.text,
+          contentTruncated: boundedContent.truncated,
+          contentCharsReturned: boundedContent.text.length,
+          contentTotalChars: normalizedContext.content.length,
           degraded: result.degraded,
           degradedReason: result.degradedReason,
           noActiveEditor: result.noActiveEditor,
@@ -259,6 +271,9 @@ export function registerReadEditTools(
             `activeFile=${payload.activeFile ?? "null"}`,
             `cursor=${payload.cursor ? `${payload.cursor.line}:${payload.cursor.ch}` : "null"}`,
             `selection="${previewText(payload.selection, 120)}"`,
+            `selectionTruncated=${payload.selectionTruncated}`,
+            `contentTruncated=${payload.contentTruncated}`,
+            `content="${previewText(payload.content, 120)}"`,
             `availableTargets=${availableTargets.join(",") || "none"}`,
             `editTargets=${JSON.stringify(payload.editTargets)}`,
           ].join("\n"),

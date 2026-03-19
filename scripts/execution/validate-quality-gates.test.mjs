@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
 
 import {
   extractToolRegistrations,
+  validateActiveRuntimeDocs,
   validateAnnotationPolicy,
+  validateCompatibilityEvidence,
   validateContractPayloads,
   validateSchemaPolicy,
 } from "./validate-quality-gates.mjs";
@@ -86,4 +90,32 @@ test("validateContractPayloads accepts valid handshake and error envelope", () =
 
   assert.equal(result.ok, true);
   assert.equal(result.errors.length, 0);
+});
+
+test("validateCompatibilityEvidence rejects missing or incomplete probes", () => {
+  const result = validateCompatibilityEvidence(
+    path.join(process.cwd(), "scripts", "execution", "fixtures", "missing-compatibility-root"),
+  );
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((error) => error.includes("compatibility probe evidence")));
+});
+
+test("validateActiveRuntimeDocs rejects retired tool names in active docs", () => {
+  const tempRoot = path.join(process.cwd(), ".tmp", "runtime-doc-root");
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+  fs.mkdirSync(path.join(tempRoot, "docs", "execution"), { recursive: true });
+  fs.writeFileSync(
+    path.join(tempRoot, "docs", "execution", "obsidian-plugin-release-and-device-test.md"),
+    "Use get_note and search_notes_semantic with obsidian-companion-mcp",
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(tempRoot, "docs", "execution", "agent-dual-mcp-review-playbook.md"),
+    "Enable plugin obsidian-companion-mcp",
+    "utf8",
+  );
+  const result = validateActiveRuntimeDocs(tempRoot);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((error) => error.includes("retired tool name")));
+  assert.ok(result.errors.some((error) => error.includes("retired plugin id")));
 });

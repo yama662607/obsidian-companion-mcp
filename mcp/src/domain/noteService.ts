@@ -9,6 +9,25 @@ export class NoteService {
     private readonly semanticService?: SemanticService,
   ) {}
 
+  private getFallbackDegradedReason(error: unknown): string {
+    if (!(error instanceof DomainError)) {
+      return "plugin_unavailable";
+    }
+
+    switch (error.code) {
+      case "NOT_FOUND":
+        return "plugin_not_found_fallback_used";
+      case "VALIDATION":
+        return "plugin_validation_fallback_used";
+      case "CONFLICT":
+        return "plugin_conflict_fallback_used";
+      case "INTERNAL":
+        return "plugin_internal_fallback_used";
+      default:
+        return "plugin_unavailable";
+    }
+  }
+
   async read(path: string): Promise<{
     content: string;
     metadata: Record<string, unknown>;
@@ -31,7 +50,7 @@ export class NoteService {
         degraded: false,
         degradedReason: null,
       };
-    } catch {
+    } catch (error) {
       const hit = fallback.readNote(path);
       if (!hit) {
         throw new DomainError("NOT_FOUND", `Note not found: ${path}`);
@@ -42,7 +61,7 @@ export class NoteService {
         updatedAt: hit.updatedAt,
         size: hit.size,
         degraded: true,
-        degradedReason: "plugin_unavailable",
+        degradedReason: this.getFallbackDegradedReason(error),
       };
     }
   }
@@ -72,7 +91,7 @@ export class NoteService {
         degraded: false,
         degradedReason: null,
       };
-    } catch {
+    } catch (error) {
       const record = fallback.writeNote(path, content);
       this.semanticService?.upsert(path, record.content, Date.now());
       return {
@@ -80,7 +99,7 @@ export class NoteService {
         updatedAt: record.updatedAt,
         size: record.size,
         degraded: true,
-        degradedReason: "plugin_unavailable",
+        degradedReason: this.getFallbackDegradedReason(error),
       };
     }
   }
@@ -96,7 +115,11 @@ export class NoteService {
       const deleted = fallback.deleteNote(path);
       if (deleted) {
         this.semanticService?.remove(path);
-        return { deleted: true, degraded: true, degradedReason: "plugin_unavailable" };
+        return {
+          deleted: true,
+          degraded: true,
+          degradedReason: this.getFallbackDegradedReason(error),
+        };
       }
 
       if (error instanceof DomainError && error.code === "NOT_FOUND") {
@@ -130,7 +153,7 @@ export class NoteService {
         degraded: false,
         degradedReason: null,
       };
-    } catch {
+    } catch (error) {
       const record = fallback.updateMetadata(path, metadata);
       this.semanticService?.upsert(path, record.content, Date.now());
       return {
@@ -139,7 +162,7 @@ export class NoteService {
         updatedAt: record.updatedAt,
         size: record.size,
         degraded: true,
-        degradedReason: "plugin_unavailable",
+        degradedReason: this.getFallbackDegradedReason(error),
       };
     }
   }
@@ -191,14 +214,7 @@ export class NoteService {
         throw new DomainError("NOT_FOUND", `Note not found: ${from}`);
       }
       this.semanticService?.movePath(from, to);
-      const degradedReason =
-        error instanceof DomainError
-          ? error.code === "NOT_FOUND"
-            ? "plugin_not_found_fallback_used"
-            : error.code === "UNAVAILABLE"
-              ? "plugin_unavailable"
-              : `plugin_${error.code.toLowerCase()}_fallback_used`
-          : "plugin_unavailable";
+      const degradedReason = this.getFallbackDegradedReason(error);
       return { from, to, degraded: true, degradedReason };
     }
   }

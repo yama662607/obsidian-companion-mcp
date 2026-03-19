@@ -49,7 +49,7 @@ Phase 1: 編集 capability 判定
 - 以降の編集フェーズは Unknown 扱い
 
 Phase 2: ベースライン取得
-1. Companion: get_note(testDrawingPath)
+1. Companion: read_note(testDrawingPath)
 2. Excalidraw: inspect_drawing(testDrawingPath, mode=summary)
 3. Excalidraw: inspect_drawing(testDrawingPath, mode=elements)
 4. 上記3つのレスポンスを baseline として保存
@@ -61,7 +61,7 @@ Phase 3: 実編集テスト（候補ツールがある場合のみ）
 - 新規テキスト要素を1つ追加（内容 markerText）
 - メタデータに markerText を追加
 3. 実行後、すぐに以下で検証:
-- Companion get_note(testDrawingPath)
+- Companion read_note(testDrawingPath)
 - Excalidraw inspect_drawing summary/elements
 4. markerText が観測できることを確認
 
@@ -69,7 +69,7 @@ Phase 4: 復元テスト
 1. 可能なら同じ書き込み系 tool で markerText を削除
 2. 不可なら baseline へ戻す操作を行う
 3. 復元後に再取得:
-- Companion get_note
+- Companion read_note
 - Excalidraw inspect_drawing summary/elements
 4. baseline と差分がないことを確認
 

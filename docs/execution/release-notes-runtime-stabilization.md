@@ -1,5 +1,9 @@
 # リリースノート: Runtime 安定化
 
+> [!WARNING]
+> Historical note. This document describes an older transition phase and may mention retired tool names.
+> For the current public surface, use `docs/mcp/*.md` and `docs/execution/runtime-migration-guide.md`.
+
 ## 主な変更
 
 - 起動時 plugin handshake と runtime status resource を追加

@@ -1,5 +1,9 @@
 # Technical Specification: MCP-Plugin Communication
 
+> [!WARNING]
+> Historical pre-RPC design note. This document no longer matches the current public runtime surface.
+> Use `docs/mcp/*.md` and `docs/execution/runtime-migration-guide.md` for the current contract.
+
 ## 1. Communication Protocol
 - **Transport**: WebSocket (preferred) or HTTP REST.
 - **Port**: Default `13333` (configurable).

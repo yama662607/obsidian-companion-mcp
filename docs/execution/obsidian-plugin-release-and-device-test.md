@@ -40,8 +40,8 @@ just plugin-install-local /absolute/path/to/YourVault
    - 起動時エラーが出ない
    - エディタ関連機能が利用できる
    - mcp から接続できる
-   - discovery-first フロー（list_notes / search_notes_semantic / get_note）が実行できる
-   - move_note / get_index_status が実行できる
+   - discovery-first フロー（list_notes / search_notes / semantic_search_notes -> read_note）が実行できる
+   - move_note / get_semantic_index_status が実行できる
 
 ## 3. 公開前チェック
 

@@ -105,6 +105,8 @@ test("semantic service indexes chunks instead of full-note excerpts", () => {
   assert.match(source, /indexedChunkCount/);
   assert.match(source, /indexedNoteCount/);
   assert.match(source, /chunkIdsByPath/);
+  assert.match(source, /ready:\s*pendingCount === 0 && modelReady/);
+  assert.match(source, /const note = fallback\.readNote\(value\.path\)/);
   assert.match(source, /boundSemanticChunkText\(value\.snippet\)/);
   assert.doesNotMatch(source, /snippet:\s*toExcerpt/);
 });
@@ -139,7 +141,34 @@ test("note service drains pending semantic work and preserves fallback move reas
   const source = read("mcp/src/domain/noteService.ts");
 
   assert.match(source, /while \(this\.semanticService\.getIndexStatus\(\)\.pendingCount > 0\)/);
+  assert.match(source, /private getFallbackDegradedReason/);
+  assert.match(source, /plugin_validation_fallback_used/);
+  assert.match(source, /plugin_conflict_fallback_used/);
   assert.match(source, /plugin_not_found_fallback_used/);
+});
+
+test("active runtime docs use the current tool surface", () => {
+  const activeDocs = [
+    "docs/execution/obsidian-plugin-release-and-device-test.md",
+    "docs/execution/agent-runtime-review-request-prompt-mcp-only.md",
+    "docs/execution/agent-review-request-discovery-scale.md",
+    "docs/execution/agent-dual-mcp-test-request-prompt.md",
+    "docs/execution/agent-review-request-post-vault-hardening-mcp-only.md",
+    "docs/execution/agent-dual-mcp-review-playbook.md",
+  ];
+
+  for (const docPath of activeDocs) {
+    const source = read(docPath);
+    assert.doesNotMatch(source, /\bget_note\b/);
+    assert.doesNotMatch(source, /\bget_active_context\b/);
+    assert.doesNotMatch(source, /\bsearch_notes_semantic\b/);
+    assert.doesNotMatch(source, /\bupdate_note_metadata\b/);
+    assert.doesNotMatch(source, /\bget_index_status\b/);
+  }
+
+  const dualReview = read("docs/execution/agent-dual-mcp-review-playbook.md");
+  assert.match(dualReview, /\bcompanion-mcp\b/);
+  assert.doesNotMatch(dualReview, /\bplugin\s+obsidian-companion-mcp\b/i);
 });
 
 test("server wiring registers search, read/edit, and lifecycle tool groups", () => {

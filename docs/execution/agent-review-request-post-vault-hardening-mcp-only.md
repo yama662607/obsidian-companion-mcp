@@ -26,15 +26,15 @@ Preflight:
 5. Companion と Excalidraw が同一 OBSIDIAN_VAULT_PATH で起動している前提を確認
 
 Phase A: Companion 基本動作
-1. callTool(get_active_context, {})
+1. callTool(read_active_context, {})
 2. callTool(create_note, {
    "path": "review/mcp-only-vault-test.md",
    "content": "mcp only vault test"
 })
-3. callTool(get_note, {"path": "review/mcp-only-vault-test.md"})
-4. callTool(search_notes_semantic, {"query": "mcp only vault test", "limit": 5})
+3. callTool(read_note, {"note": "review/mcp-only-vault-test.md"})
+4. callTool(semantic_search_notes, {"query": "mcp only vault test", "topK": 5})
 5. callTool(delete_note, {"path": "review/mcp-only-vault-test.md"})
-6. callTool(get_note, {"path": "review/mcp-only-vault-test.md"})
+6. callTool(read_note, {"note": "review/mcp-only-vault-test.md"})
 
 確認項目:
 - create/get/search/delete が安定
@@ -43,7 +43,7 @@ Phase A: Companion 基本動作
 - degraded/degradedReason の有無と一貫性
 
 Phase B: Vault境界と安全性
-1. callTool(get_note, {"path": "../outside.md"})
+1. callTool(read_note, {"note": "../outside.md"})
 2. callTool(create_note, {"path": "../outside.md", "content": "x"})
 
 確認項目:
@@ -55,7 +55,7 @@ Phase C: Excalidraw 連携（実ファイル検証）
 - 例: 6_Excalidraw/test.excalidraw.md
 
 1. Companion:
-- callTool(get_note, {"path": "6_Excalidraw/test.excalidraw.md"})
+- callTool(read_note, {"note": "6_Excalidraw/test.excalidraw.md"})
 
 2. Excalidraw:
 - callTool(inspect_drawing, {"filePath": "6_Excalidraw/test.excalidraw.md", "mode": "summary"})
@@ -69,12 +69,12 @@ Phase C: Excalidraw 連携（実ファイル検証）
 - エラー応答が機械可読か（isError/code/message）
 
 Phase C-2: 修正項目の回帰固定
-1. Companion get_note の `## Element Links` にリンクが存在する図で、inspect_drawing(mode="summary") の linkedElementsCount が 0 にならないこと
+1. Companion read_note の `## Element Links` にリンクが存在する図で、inspect_drawing(mode="summary") の linkedElementsCount が 0 にならないこと
 2. inspect_drawing(filePath: not-exists) でプレーン文字列ではなく機械可読エラーが返ること
 
 Phase D: 再現性
-1. search_notes_semantic(query="protocol", limit=5) を2回
-2. search_notes_semantic(query="integration testing", limit=5) を2回
+1. semantic_search_notes(query="protocol", topK=5) を2回
+2. semantic_search_notes(query="integration testing", topK=5) を2回
 3. inspect_drawing(同一入力) を10回
 
 確認項目:

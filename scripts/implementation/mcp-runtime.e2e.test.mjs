@@ -369,6 +369,23 @@ test("mcp e2e: persisted discovery, read, edit, metadata, and lifecycle flow wor
 
 test("mcp e2e: semantic search bounds legacy payloads loaded from disk", async (t) => {
   resetE2EVault();
+  fs.mkdirSync(path.join(e2eVaultRoot, "e2e"), { recursive: true });
+  fs.writeFileSync(
+    path.join(e2eVaultRoot, "e2e", "legacy.md"),
+    [
+      "# Legacy Semantic",
+      "",
+      "line zero",
+      "line one",
+      "line two",
+      "line three",
+      "TCP semantic marker",
+      "line five",
+      "line six",
+      "line seven",
+    ].join("\n"),
+    "utf8",
+  );
   writeLegacyVectorIndex([
     [
       "e2e/legacy.md:0-0",
@@ -407,6 +424,8 @@ test("mcp e2e: semantic search bounds legacy payloads loaded from disk", async (
   assert.ok(!semantic.isError);
   assert.equal(semantic.structuredContent.returned, 1);
   assert.ok(semantic.structuredContent.results[0].chunk.text.length <= 1_200);
+  assert.ok(semantic.structuredContent.results[0].anchor.endLine >= 6);
+  assert.notEqual(semantic.structuredContent.results[0].chunk.id, "e2e/legacy.md:0-0");
   assert.ok(semantic.content[0].text.length < 4_000);
 });
 
@@ -554,6 +573,7 @@ test("mcp e2e: active context read/edit handoff works against plugin bridge", as
   assert.ok(!active.isError);
   assert.equal(active.structuredContent.activeFile, "e2e/active.md");
   assert.equal(active.structuredContent.selection, "beta");
+  assert.equal(active.structuredContent.contentTruncated, false);
   assert.ok(active.structuredContent.editTargets.selection);
   assert.match(active.content[0].text, /editTargets=/);
 
@@ -589,6 +609,85 @@ test("mcp e2e: active context read/edit handoff works against plugin bridge", as
   });
   assert.ok(!inserted.isError);
   assert.equal(inserted.structuredContent.status, "applied");
+});
+
+test("mcp e2e: read_active_context bounds large structured payloads", async (t) => {
+  resetE2EVault();
+  const repeatedLine = "0123456789 ".repeat(200);
+  const context = {
+    activeFile: "e2e/large-active.md",
+    cursor: { line: 0, ch: 0 },
+    selection: repeatedLine.repeat(3),
+    selectionRange: {
+      from: { line: 0, ch: 0 },
+      to: { line: 0, ch: repeatedLine.repeat(3).length },
+    },
+    content: repeatedLine.repeat(30),
+  };
+
+  const plugin = await startMockPluginServer((request) => {
+    if (request.method === "health.ping") {
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        protocolVersion: "0.1.0",
+        result: {
+          capabilities: ["health.ping", "editor.getContext"],
+          availability: "normal",
+          configDir: ".obsidian",
+          vaultPath: e2eVaultRoot,
+        },
+      };
+    }
+
+    if (request.method === "editor.getContext") {
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        protocolVersion: "0.1.0",
+        result: context,
+      };
+    }
+
+    return {
+      jsonrpc: "2.0",
+      id: request.id,
+      protocolVersion: "0.1.0",
+      error: {
+        code: "METHOD_NOT_FOUND",
+        message: `Unsupported method: ${request.method}`,
+        data: { correlationId: "mock-corr" },
+      },
+    };
+  });
+
+  const session = await createMcpClient({
+    envOverrides: {
+      OBSIDIAN_PLUGIN_PORT: String(plugin.port),
+    },
+  });
+  t.after(async () => {
+    await session.close();
+    await plugin.close();
+  });
+
+  const active = await session.client.callTool({
+    name: "read_active_context",
+    arguments: {
+      maxChars: 250,
+    },
+  });
+
+  assert.ok(!active.isError);
+  assert.equal(active.structuredContent.selectionTotalChars, context.selection.length);
+  assert.equal(active.structuredContent.contentTotalChars, context.content.length);
+  assert.equal(active.structuredContent.selectionTruncated, true);
+  assert.equal(active.structuredContent.contentTruncated, true);
+  assert.ok(active.structuredContent.selection.length <= 250);
+  assert.ok(active.structuredContent.content.length <= 250);
+  assert.equal(active.structuredContent.editTargets.selection.currentText, undefined);
+  assert.equal(active.structuredContent.editTargets.document.currentText, undefined);
+  assert.ok(active.content[0].text.length < 4_000);
 });
 
 test("mcp e2e: move fallback preserves the plugin failure reason when filesystem fallback succeeds", async (t) => {
@@ -657,4 +756,109 @@ test("mcp e2e: move fallback preserves the plugin failure reason when filesystem
   assert.ok(!moved.isError);
   assert.equal(moved.structuredContent.degraded, true);
   assert.equal(moved.structuredContent.degradedReason, "plugin_not_found_fallback_used");
+});
+
+test("mcp e2e: persisted note fallbacks preserve specific plugin failure reasons", async (t) => {
+  resetE2EVault();
+  fs.mkdirSync(path.join(e2eVaultRoot, "e2e"), { recursive: true });
+  fs.writeFileSync(path.join(e2eVaultRoot, "e2e", "fallback-read.md"), "# fallback read\n", "utf8");
+
+  const plugin = await startMockPluginServer((request) => {
+    if (request.method === "health.ping") {
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        protocolVersion: "0.1.0",
+        result: {
+          capabilities: [
+            "health.ping",
+            "notes.read",
+            "notes.write",
+            "notes.delete",
+            "metadata.update",
+          ],
+          availability: "normal",
+          configDir: ".obsidian",
+          vaultPath: e2eVaultRoot,
+        },
+      };
+    }
+
+    if (
+      request.method === "notes.read" ||
+      request.method === "notes.write" ||
+      request.method === "notes.delete" ||
+      request.method === "metadata.update"
+    ) {
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        protocolVersion: "0.1.0",
+        error: {
+          code: "NOT_FOUND",
+          message: `Mock plugin stale state for ${request.method}`,
+          data: { correlationId: "mock-plugin-not-found" },
+        },
+      };
+    }
+
+    return {
+      jsonrpc: "2.0",
+      id: request.id,
+      protocolVersion: "0.1.0",
+      error: {
+        code: "METHOD_NOT_FOUND",
+        message: `Unsupported method: ${request.method}`,
+        data: { correlationId: "mock-corr" },
+      },
+    };
+  });
+
+  const session = await createMcpClient({
+    envOverrides: {
+      OBSIDIAN_PLUGIN_PORT: String(plugin.port),
+    },
+  });
+  t.after(async () => {
+    await session.close();
+    await plugin.close();
+  });
+
+  const created = await session.client.callTool({
+    name: "create_note",
+    arguments: {
+      path: "e2e/fallback-write.md",
+      content: "# fallback write\n",
+    },
+  });
+  assert.ok(!created.isError);
+  assert.equal(created.structuredContent.degradedReason, "plugin_not_found_fallback_used");
+
+  const read = await session.client.callTool({
+    name: "read_note",
+    arguments: {
+      note: "e2e/fallback-read.md",
+    },
+  });
+  assert.ok(!read.isError);
+  assert.equal(read.structuredContent.degradedReason, "plugin_not_found_fallback_used");
+
+  const patched = await session.client.callTool({
+    name: "patch_note_metadata",
+    arguments: {
+      note: "e2e/fallback-read.md",
+      metadata: { status: "fallback" },
+    },
+  });
+  assert.ok(!patched.isError);
+  assert.equal(patched.structuredContent.degradedReason, "plugin_not_found_fallback_used");
+
+  const deleted = await session.client.callTool({
+    name: "delete_note",
+    arguments: {
+      note: "e2e/fallback-read.md",
+    },
+  });
+  assert.ok(!deleted.isError);
+  assert.equal(deleted.structuredContent.degradedReason, "plugin_not_found_fallback_used");
 });

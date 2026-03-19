@@ -58,12 +58,12 @@ Phase 2: Runtime 可観測性の動作点検
 Phase 3: Tool の実行シナリオ点検
 以下を順番に実行し、入力と出力要点をログ化する:
 1. 読み取り系シナリオ
-- callTool(get_active_context)
-- callTool(search_notes_semantic, { query, limit })
+- callTool(read_active_context)
+- callTool(semantic_search_notes, { query, topK })
 2. Note 操作シナリオ
 - callTool(create_note)
-- callTool(update_note_metadata)
-- callTool(get_note)
+- callTool(patch_note_metadata)
+- callTool(read_note)
 - callTool(delete_note)
 3. エラー系シナリオ
 - 存在しない note に対する delete_note
@@ -90,10 +90,10 @@ Phase 6: 誤検知防止の再判定
 
 Phase 7: Semantic Correctness 検証（内容妥当性）
 1. create_note で一意文字列を含むノートを作成する
-2. get_note で内容が一致することを確認する
-3. search_notes_semantic で一意文字列検索し、作成ノートがヒットすることを確認する
-4. delete_note で削除後、get_note が NOT_FOUND になることを確認する
-5. get_active_context の値が意味的に妥当かを確認する
+2. read_note で内容が一致することを確認する
+3. semantic_search_notes で一意文字列検索し、作成ノートがヒットすることを確認する
+4. delete_note で削除後、read_note が NOT_FOUND になることを確認する
+5. read_active_context の値が意味的に妥当かを確認する
 - noActiveEditor=false なら cursor は content の行範囲内
 - noActiveEditor=true なら矛盾する editor 情報を返さない
 
@@ -136,8 +136,8 @@ MCP Prompt が使える場合:
 5. readResource(fallback://behavior)
 6. readResource(review://checklist)
 7. getPrompt(workflow_agent_runtime_review, { scope, severityThreshold })
-8. callTool(search_notes_semantic)
-9. callTool(get_active_context)
+8. callTool(semantic_search_notes)
+9. callTool(read_active_context)
 
 ## 注意
 
@@ -166,9 +166,9 @@ Preflight（必須）:
 4. capability://matrix 取得（公開契約ベースライン保存）
 
 A. 構造検証（形式）
-1. get_note(path: missing)
+1. read_note(note: missing)
 2. delete_note(path: missing)
-3. insert_at_cursor(invalid position)
+3. edit_note(active target with invalid range)
 確認項目:
 - isError
 - structuredContent.code
@@ -177,11 +177,11 @@ A. 構造検証（形式）
 
 B. 内容妥当性検証（意味）
 1. create_note（一意 marker を含む）
-2. get_note で内容一致確認
-3. search_notes_semantic で作成ノートがヒットするか確認
+2. read_note で内容一致確認
+3. semantic_search_notes で作成ノートがヒットするか確認
 4. delete_note 実行
-5. get_note が NOT_FOUND になるか確認
-6. get_active_context 実行
+5. read_note が NOT_FOUND になるか確認
+6. read_active_context 実行
 - noActiveEditor=false の場合:
   - cursor.line >= 0
   - cursor.ch >= 0
@@ -190,7 +190,7 @@ B. 内容妥当性検証（意味）
   - エラーにせず状態が一貫していること
 
 C. 一貫性検証
-1. search_notes_semantic 応答に degraded/degradedReason があるか
+1. semantic_search_notes 応答に degraded/degradedReason があるか
 2. capability://matrix の公開名と list 結果が一致するか
 3. destructiveHint/readOnlyHint/idempotentHint の観測可否（不可なら Unknown）
 

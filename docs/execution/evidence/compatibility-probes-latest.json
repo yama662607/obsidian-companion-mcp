@@ -1,0 +1,18 @@
+{
+  "status": "pass",
+  "generatedAt": "2026-03-19T12:00:00+09:00",
+  "probes": {
+    "textOnlyClient": {
+      "status": "pass",
+      "evidence": "scripts/implementation/mcp-runtime.e2e.test.mjs"
+    },
+    "jsonStringifiedNestedArgs": {
+      "status": "pass",
+      "evidence": "scripts/implementation/mcp-runtime.e2e.test.mjs"
+    },
+    "legacyPersistedState": {
+      "status": "pass",
+      "evidence": "scripts/implementation/mcp-runtime.e2e.test.mjs"
+    }
+  }
+}

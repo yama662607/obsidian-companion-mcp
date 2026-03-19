@@ -153,6 +153,95 @@ function validateReleaseEvidence(repoRoot) {
   }
 }
 
+const ACTIVE_RUNTIME_DOCS = [
+  "docs/execution/obsidian-plugin-release-and-device-test.md",
+  "docs/execution/agent-runtime-review-request-prompt-mcp-only.md",
+  "docs/execution/agent-review-request-discovery-scale.md",
+  "docs/execution/agent-dual-mcp-test-request-prompt.md",
+  "docs/execution/agent-review-request-post-vault-hardening-mcp-only.md",
+  "docs/execution/agent-dual-mcp-review-playbook.md",
+];
+
+const LEGACY_TOOL_NAME_REGEX =
+  /\b(get_note|get_active_context|search_notes_semantic|update_note_metadata|get_index_status)\b/;
+
+export function validateActiveRuntimeDocs(repoRoot) {
+  const errors = [];
+
+  for (const relativePath of ACTIVE_RUNTIME_DOCS) {
+    const filePath = path.join(repoRoot, relativePath);
+    if (!fs.existsSync(filePath)) {
+      errors.push(`Missing active runtime doc: ${relativePath}`);
+      continue;
+    }
+
+    const source = fs.readFileSync(filePath, "utf8");
+    const legacyMatch = source.match(LEGACY_TOOL_NAME_REGEX);
+    if (legacyMatch) {
+      errors.push(`${relativePath} still references retired tool name: ${legacyMatch[1]}`);
+    }
+  }
+
+  const dualReviewPath = path.join(
+    repoRoot,
+    "docs",
+    "execution",
+    "agent-dual-mcp-review-playbook.md",
+  );
+  if (fs.existsSync(dualReviewPath)) {
+    const source = fs.readFileSync(dualReviewPath, "utf8");
+    if (!/\bcompanion-mcp\b/.test(source)) {
+      errors.push("agent-dual-mcp-review-playbook.md must reference plugin id companion-mcp");
+    }
+    if (/\bplugin\s+obsidian-companion-mcp\b/i.test(source)) {
+      errors.push(
+        "agent-dual-mcp-review-playbook.md still references retired plugin id obsidian-companion-mcp",
+      );
+    }
+  }
+
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateCompatibilityEvidence(repoRoot) {
+  const evidencePath = path.join(
+    repoRoot,
+    "docs",
+    "execution",
+    "evidence",
+    "compatibility-probes-latest.json",
+  );
+  if (!fs.existsSync(evidencePath)) {
+    return {
+      ok: false,
+      errors: [
+        "Missing compatibility probe evidence at docs/execution/evidence/compatibility-probes-latest.json",
+      ],
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(evidencePath, "utf8"));
+    const requiredProbes = ["textOnlyClient", "jsonStringifiedNestedArgs", "legacyPersistedState"];
+    if (parsed.status !== "pass") {
+      return { ok: false, errors: ["compatibility probe evidence status must be pass"] };
+    }
+    if (typeof parsed.generatedAt !== "string" || parsed.generatedAt.length === 0) {
+      return { ok: false, errors: ["compatibility probe evidence must include generatedAt"] };
+    }
+
+    const errors = [];
+    for (const probeName of requiredProbes) {
+      if (parsed.probes?.[probeName]?.status !== "pass") {
+        errors.push(`compatibility probe ${probeName} must have status pass`);
+      }
+    }
+    return { ok: errors.length === 0, errors };
+  } catch {
+    return { ok: false, errors: ["compatibility probe evidence JSON is invalid"] };
+  }
+}
+
 function main() {
   const repoRoot = process.cwd();
   const fileSources = collectToolFileSources(repoRoot);
@@ -172,6 +261,8 @@ function main() {
     { name: "annotation-policy", result: validateAnnotationPolicy(fileSources) },
     { name: "contract-payloads", result: validateContractPayloads(fixture) },
     { name: "release-evidence", result: validateReleaseEvidence(repoRoot) },
+    { name: "compatibility-evidence", result: validateCompatibilityEvidence(repoRoot) },
+    { name: "active-runtime-docs", result: validateActiveRuntimeDocs(repoRoot) },
   ];
 
   let hasErrors = false;

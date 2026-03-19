@@ -1,5 +1,9 @@
 # Implementation Plan: Obsidian Companion MCP
 
+> [!WARNING]
+> Historical planning document. The current runtime surface has changed substantially.
+> Use `docs/mcp/*.md` and `openspec/changes/archive/` for the current design record.
+
 ## Overview
 A hybrid MCP server and Obsidian plugin that provides vault-wide semantic intelligence, full-note CRUD, and real-time editor context awareness.
 

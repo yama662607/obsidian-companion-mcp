@@ -38,7 +38,7 @@ just mcp-build
 1. 同じVaultでObsidianを開く
 2. Settings -> Community plugins を開く
 3. Community plugins が無効なら有効化
-4. plugin obsidian-companion-mcp を有効化
+4. plugin companion-mcp を有効化
 5. Obsidianを1回再起動
 
 ### 1.3 Vaultの試験データ準備

@@ -568,6 +568,8 @@ export default class ObsidianCompanionPlugin extends Plugin {
 
     if (req.method === "POST") {
       let body = "";
+      let rpcMethod = "unknown";
+      let rpcId: JsonRpcId | null = null;
 
       try {
         for await (const chunk of req) {
@@ -575,12 +577,23 @@ export default class ObsidianCompanionPlugin extends Plugin {
         }
 
         const request = JSON.parse(body) as JsonRpcRequest<unknown>;
+        rpcMethod = request.method;
+        rpcId = request.id;
         const response = await this.host?.handle(request);
+
+        if (response && "error" in response) {
+          console.warn(
+            `Companion MCP: rpc error method=${rpcMethod} id=${String(rpcId)} code=${response.error.code} correlationId=${response.error.data?.correlationId ?? "unknown"}`,
+          );
+        }
 
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(response));
       } catch (error) {
-        console.error("Companion MCP: request handling error", error);
+        console.error(
+          `Companion MCP: request handling error http=${req.method ?? "unknown"} rpc=${rpcMethod} id=${String(rpcId ?? "unknown")}`,
+          error,
+        );
         res.writeHead(400);
         res.end("Invalid JSON-RPC request");
       }
@@ -592,7 +605,7 @@ export default class ObsidianCompanionPlugin extends Plugin {
 
   private handleServerError(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
-    console.error("Companion MCP: server error", error);
+    console.error(`Companion MCP: server error port=${this.settings.port}`, error);
     new Notice(`Companion MCP error: ${message}`);
   }
 

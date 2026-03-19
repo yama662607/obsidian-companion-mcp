@@ -161,7 +161,9 @@ Read the active editor buffer and return edit targets for the current active con
 **Input**
 
 ```json
-{}
+{
+  "maxChars": 6000
+}
 ```
 
 **Output**
@@ -171,11 +173,17 @@ Read the active editor buffer and return edit targets for the current active con
   "activeFile": "Daily/2026-03-19.md",
   "cursor": { "line": 10, "ch": 5 },
   "selection": "selected text",
+  "selectionTruncated": false,
+  "selectionCharsReturned": 13,
+  "selectionTotalChars": 13,
   "selectionRange": {
     "from": { "line": 10, "ch": 0 },
     "to": { "line": 10, "ch": 13 }
   },
   "content": "# note body...",
+  "contentTruncated": false,
+  "contentCharsReturned": 13,
+  "contentTotalChars": 13,
   "degraded": false,
   "degradedReason": null,
   "noActiveEditor": false,
@@ -222,3 +230,5 @@ Read the active editor buffer and return edit targets for the current active con
 - no active editor なら `editTargets` は `null`
 - selection が空なら `selection` target は返さない
 - active editor 側では revision は持たない
+- `selection` / `content` は `maxChars` で bounded される
+- 返却が truncated の場合、対応する `editTargets.*.currentText` は省略されることがある

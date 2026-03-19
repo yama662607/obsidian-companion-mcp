@@ -1,3 +1,4 @@
+import * as fallback from "../infra/fallbackStorage";
 import { createEmbeddingProvider, type EmbeddingProvider } from "./embeddingProvider";
 import { IndexingQueue } from "./indexingQueue";
 import { boundSemanticChunkText, buildSemanticChunks, readTitleFromPath } from "./noteDocument";
@@ -140,14 +141,15 @@ export class SemanticService {
     pendingSample: string[];
   } {
     const pendingCount = this.queue.getPendingCount();
+    const modelReady = this.provider.getRuntimeState().modelReady;
     return {
       pendingCount,
       indexedNoteCount: this.chunkIdsByPath.size,
       indexedChunkCount: this.chunks.size,
       running: this.queue.isRunning(),
-      ready: pendingCount === 0,
+      ready: pendingCount === 0 && modelReady,
       isEmpty: this.chunks.size === 0,
-      modelReady: this.provider.getRuntimeState().modelReady,
+      modelReady,
       pendingSample: this.queue.getPendingSample(sampleLimit),
     };
   }
@@ -267,6 +269,12 @@ export class SemanticService {
         const chunkIds = this.chunkIdsByPath.get(value.path) ?? [];
         chunkIds.push(id);
         this.chunkIdsByPath.set(value.path, chunkIds);
+        continue;
+      }
+
+      const note = fallback.readNote(value.path);
+      if (note) {
+        this.upsert(value.path, note.content, note.updatedAt);
         continue;
       }
 

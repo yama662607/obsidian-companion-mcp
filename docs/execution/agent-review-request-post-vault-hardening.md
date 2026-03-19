@@ -29,9 +29,9 @@ Preflight:
 
 Phase A: Vault固定化の検証
 1. callTool(create_note, { path: "review/vault-anchor-test.md", content: "vault anchor test" })
-2. callTool(get_note, { path: "review/vault-anchor-test.md" })
+2. callTool(read_note, { note: "review/vault-anchor-test.md" })
 3. callTool(delete_note, { path: "review/vault-anchor-test.md" })
-4. callTool(get_note, { path: "review/vault-anchor-test.md" }) で NOT_FOUND を確認
+4. callTool(read_note, { note: "review/vault-anchor-test.md" }) で NOT_FOUND を確認
 
 確認点:
 - create/get/delete が成功
@@ -39,7 +39,7 @@ Phase A: Vault固定化の検証
 - 応答に isError / code / message / correlationId がある
 
 Phase B: パス安全性の検証
-1. callTool(get_note, { path: "../outside.md" })
+1. callTool(read_note, { note: "../outside.md" })
 2. callTool(create_note, { path: "../outside.md", content: "x" })
 
 確認点:
@@ -48,15 +48,15 @@ Phase B: パス安全性の検証
 
 Phase C: APIキー簡素化の検証
 1. MCP 起動時に APIキー未設定でも稼働するか確認
-2. get_active_context / search_notes_semantic / get_note が通常動作するか確認
+2. read_active_context / semantic_search_notes / read_note が通常動作するか確認
 
 確認点:
 - 認証エラー依存の挙動が不要になっている
 - 既存ツールの安定性が維持されている
 
 Phase D: 再現性
-1. search_notes_semantic(query="protocol", limit=5) を2回
-2. get_active_context を2回
+1. semantic_search_notes(query="protocol", topK=5) を2回
+2. read_active_context を2回
 
 確認点:
 - 応答構造（主要キー）が揺れない

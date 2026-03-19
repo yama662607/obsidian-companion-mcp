@@ -54,9 +54,9 @@ Preflight:
 3. 取得結果をテストベースラインとして保存
 
 Phase A: Companion 単体健全性
-1. callTool(get_active_context)
-2. callTool(search_notes_semantic, { query: "protocol", limit: 5 })
-3. create_note -> get_note -> delete_note の往復を実行
+1. callTool(read_active_context)
+2. callTool(semantic_search_notes, { query: "protocol", topK: 5 })
+3. create_note -> read_note -> delete_note の往復を実行
 4. エラー系を確認（missing note 取得/削除時）
 確認ポイント:
 - isError と structuredContent.code/message の整合

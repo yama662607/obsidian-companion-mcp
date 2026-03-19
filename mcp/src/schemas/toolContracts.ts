@@ -138,7 +138,9 @@ export const readNoteInputSchema = z.object({
     .default({ metadata: true, documentMap: false }),
 });
 
-export const readActiveContextInputSchema = z.object({});
+export const readActiveContextInputSchema = z.object({
+  maxChars: z.number().int().min(200).max(20_000).optional().default(6_000),
+});
 
 export const editNoteInputSchema = z.object({
   target: jsonStringOr(editTargetSchema, "target"),
@@ -312,8 +314,14 @@ export const readActiveContextOutputSchema = z.object({
   activeFile: z.string().nullable(),
   cursor: positionSchema.nullable(),
   selection: z.string(),
+  selectionTruncated: z.boolean(),
+  selectionCharsReturned: z.number().int().min(0),
+  selectionTotalChars: z.number().int().min(0),
   selectionRange: rangeSchema.nullable(),
   content: z.string(),
+  contentTruncated: z.boolean(),
+  contentCharsReturned: z.number().int().min(0),
+  contentTotalChars: z.number().int().min(0),
   degraded: z.boolean(),
   degradedReason: z.string().nullable(),
   noActiveEditor: z.boolean(),

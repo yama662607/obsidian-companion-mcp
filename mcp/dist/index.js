@@ -581,6 +581,23 @@ var NoteService = class {
     this.pluginClient = pluginClient;
     this.semanticService = semanticService;
   }
+  getFallbackDegradedReason(error) {
+    if (!(error instanceof DomainError)) {
+      return "plugin_unavailable";
+    }
+    switch (error.code) {
+      case "NOT_FOUND":
+        return "plugin_not_found_fallback_used";
+      case "VALIDATION":
+        return "plugin_validation_fallback_used";
+      case "CONFLICT":
+        return "plugin_conflict_fallback_used";
+      case "INTERNAL":
+        return "plugin_internal_fallback_used";
+      default:
+        return "plugin_unavailable";
+    }
+  }
   async read(path7) {
     try {
       await this.pluginClient.send("notes.read", { path: path7 });
@@ -596,7 +613,7 @@ var NoteService = class {
         degraded: false,
         degradedReason: null
       };
-    } catch {
+    } catch (error) {
       const hit = readNote(path7);
       if (!hit) {
         throw new DomainError("NOT_FOUND", `Note not found: ${path7}`);
@@ -607,7 +624,7 @@ var NoteService = class {
         updatedAt: hit.updatedAt,
         size: hit.size,
         degraded: true,
-        degradedReason: "plugin_unavailable"
+        degradedReason: this.getFallbackDegradedReason(error)
       };
     }
   }
@@ -626,7 +643,7 @@ var NoteService = class {
         degraded: false,
         degradedReason: null
       };
-    } catch {
+    } catch (error) {
       const record = writeNote(path7, content);
       this.semanticService?.upsert(path7, record.content, Date.now());
       return {
@@ -634,7 +651,7 @@ var NoteService = class {
         updatedAt: record.updatedAt,
         size: record.size,
         degraded: true,
-        degradedReason: "plugin_unavailable"
+        degradedReason: this.getFallbackDegradedReason(error)
       };
     }
   }
@@ -647,7 +664,11 @@ var NoteService = class {
       const deleted = deleteNote(path7);
       if (deleted) {
         this.semanticService?.remove(path7);
-        return { deleted: true, degraded: true, degradedReason: "plugin_unavailable" };
+        return {
+          deleted: true,
+          degraded: true,
+          degradedReason: this.getFallbackDegradedReason(error)
+        };
       }
       if (error instanceof DomainError && error.code === "NOT_FOUND") {
         throw error;
@@ -668,7 +689,7 @@ var NoteService = class {
         degraded: false,
         degradedReason: null
       };
-    } catch {
+    } catch (error) {
       const record = updateMetadata(path7, metadata);
       this.semanticService?.upsert(path7, record.content, Date.now());
       return {
@@ -677,7 +698,7 @@ var NoteService = class {
         updatedAt: record.updatedAt,
         size: record.size,
         degraded: true,
-        degradedReason: "plugin_unavailable"
+        degradedReason: this.getFallbackDegradedReason(error)
       };
     }
   }
@@ -707,7 +728,7 @@ var NoteService = class {
         throw new DomainError("NOT_FOUND", `Note not found: ${from}`);
       }
       this.semanticService?.movePath(from, to);
-      const degradedReason = error instanceof DomainError ? error.code === "NOT_FOUND" ? "plugin_not_found_fallback_used" : error.code === "UNAVAILABLE" ? "plugin_unavailable" : `plugin_${error.code.toLowerCase()}_fallback_used` : "plugin_unavailable";
+      const degradedReason = this.getFallbackDegradedReason(error);
       return { from, to, degraded: true, degradedReason };
     }
   }
@@ -1451,14 +1472,15 @@ var SemanticService = class {
   }
   getIndexStatus(sampleLimit = 20) {
     const pendingCount = this.queue.getPendingCount();
+    const modelReady = this.provider.getRuntimeState().modelReady;
     return {
       pendingCount,
       indexedNoteCount: this.chunkIdsByPath.size,
       indexedChunkCount: this.chunks.size,
       running: this.queue.isRunning(),
-      ready: pendingCount === 0,
+      ready: pendingCount === 0 && modelReady,
       isEmpty: this.chunks.size === 0,
-      modelReady: this.provider.getRuntimeState().modelReady,
+      modelReady,
       pendingSample: this.queue.getPendingSample(sampleLimit)
     };
   }
@@ -1519,6 +1541,11 @@ var SemanticService = class {
         const chunkIds = this.chunkIdsByPath.get(value.path) ?? [];
         chunkIds.push(id);
         this.chunkIdsByPath.set(value.path, chunkIds);
+        continue;
+      }
+      const note = readNote(value.path);
+      if (note) {
+        this.upsert(value.path, note.content, note.updatedAt);
         continue;
       }
       const chunkId = `${value.path}:0-0`;
@@ -2331,7 +2358,9 @@ var readNoteInputSchema = z5.object({
     documentMap: z5.boolean().optional().default(false)
   }).optional().default({ metadata: true, documentMap: false })
 });
-var readActiveContextInputSchema = z5.object({});
+var readActiveContextInputSchema = z5.object({
+  maxChars: z5.number().int().min(200).max(2e4).optional().default(6e3)
+});
 var editNoteInputSchema = z5.object({
   target: jsonStringOr(editTargetSchema, "target"),
   change: jsonStringOr(editChangeSchema, "change")
@@ -2467,8 +2496,14 @@ var readActiveContextOutputSchema = z5.object({
   activeFile: z5.string().nullable(),
   cursor: positionSchema.nullable(),
   selection: z5.string(),
+  selectionTruncated: z5.boolean(),
+  selectionCharsReturned: z5.number().int().min(0),
+  selectionTotalChars: z5.number().int().min(0),
   selectionRange: rangeSchema.nullable(),
   content: z5.string(),
+  contentTruncated: z5.boolean(),
+  contentCharsReturned: z5.number().int().min(0),
+  contentTotalChars: z5.number().int().min(0),
   degraded: z5.boolean(),
   degradedReason: z5.string().nullable(),
   noActiveEditor: z5.boolean(),
@@ -2964,7 +2999,7 @@ function registerReadEditTools(server, noteService, editorService) {
         readOnlyHint: true
       }
     },
-    async () => {
+    async (params) => {
       try {
         const result = await editorService.getContext();
         const normalizedContext = {
@@ -2974,6 +3009,8 @@ function registerReadEditTools(server, noteService, editorService) {
           selectionRange: result.context.selectionRange ?? null,
           content: typeof result.context.content === "string" ? result.context.content : ""
         };
+        const boundedSelection = truncateText(normalizedContext.selection, params.maxChars);
+        const boundedContent = truncateText(normalizedContext.content, params.maxChars);
         const editTargets = result.noActiveEditor ? null : {
           selection: normalizedContext.selection.length > 0 && normalizedContext.selectionRange ? {
             source: "active",
@@ -2983,7 +3020,7 @@ function registerReadEditTools(server, noteService, editorService) {
               range: normalizedContext.selectionRange
             },
             revision: null,
-            currentText: normalizedContext.selection
+            currentText: boundedSelection.truncated ? void 0 : normalizedContext.selection
           } : void 0,
           cursor: normalizedContext.cursor ? {
             source: "active",
@@ -3000,12 +3037,20 @@ function registerReadEditTools(server, noteService, editorService) {
             activeFile: normalizedContext.activeFile,
             anchor: { type: "full" },
             revision: null,
-            currentText: normalizedContext.content
+            currentText: boundedContent.truncated ? void 0 : normalizedContext.content
           }
         };
         const payload = {
           ...normalizedContext,
+          selection: boundedSelection.text,
+          selectionTruncated: boundedSelection.truncated,
+          selectionCharsReturned: boundedSelection.text.length,
+          selectionTotalChars: normalizedContext.selection.length,
           editTargets,
+          content: boundedContent.text,
+          contentTruncated: boundedContent.truncated,
+          contentCharsReturned: boundedContent.text.length,
+          contentTotalChars: normalizedContext.content.length,
           degraded: result.degraded,
           degradedReason: result.degradedReason,
           noActiveEditor: result.noActiveEditor,
@@ -3019,6 +3064,9 @@ function registerReadEditTools(server, noteService, editorService) {
             `activeFile=${payload.activeFile ?? "null"}`,
             `cursor=${payload.cursor ? `${payload.cursor.line}:${payload.cursor.ch}` : "null"}`,
             `selection="${previewText(payload.selection, 120)}"`,
+            `selectionTruncated=${payload.selectionTruncated}`,
+            `contentTruncated=${payload.contentTruncated}`,
+            `content="${previewText(payload.content, 120)}"`,
             `availableTargets=${availableTargets.join(",") || "none"}`,
             `editTargets=${JSON.stringify(payload.editTargets)}`
           ].join("\n")
