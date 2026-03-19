@@ -89,6 +89,8 @@ type ChunkRecord = {
   headingPath: string[] | null;
 };
 
+const SEMANTIC_CHUNK_MAX_CHARS = 1_200;
+
 function normalizeHeading(title: string): string {
   return title.trim().replace(/\s+/g, " ");
 }
@@ -598,7 +600,7 @@ export function buildSemanticChunks(notePath: string, content: string): ChunkRec
       chunks.push({
         id: `${notePath}:${currentStart}-${currentEnd}`,
         path: notePath,
-        text: chunkText,
+        text: boundSemanticChunkText(chunkText),
         startLine: currentStart,
         endLine: currentEnd,
         headingPath: heading?.path ?? null,
@@ -608,6 +610,14 @@ export function buildSemanticChunks(notePath: string, content: string): ChunkRec
   }
 
   return chunks;
+}
+
+export function boundSemanticChunkText(text: string, maxChars = SEMANTIC_CHUNK_MAX_CHARS): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= maxChars) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, Math.max(maxChars - 1, 0))}…`;
 }
 
 export function compareRanges(left: EditorRangeLike, right: EditorRangeLike): number {

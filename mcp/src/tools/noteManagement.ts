@@ -36,7 +36,19 @@ export function registerNoteTools(server: McpServer, noteService: NoteService): 
     async () => {
       try {
         const result = await noteService.refreshIndex();
-        return okResult("Semantic indexing refresh started", result);
+        return okResult(
+          `Semantic indexing refresh completed (${result.pendingCount === 0 ? "ready" : "pending"})`,
+          result,
+          [
+            `totalFound=${result.totalFound}`,
+            `queued=${result.queuedCount}`,
+            `flushed=${result.flushedCount}`,
+            `pending=${result.pendingCount}`,
+            `indexedNotes=${result.indexedNoteCount}`,
+            `indexedChunks=${result.indexedChunkCount}`,
+            `modelReady=${result.modelReady}`,
+          ].join("\n"),
+        );
       } catch (error) {
         const domainError =
           error instanceof DomainError

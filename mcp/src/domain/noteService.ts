@@ -178,13 +178,28 @@ export class NoteService {
       await this.pluginClient.send("notes.move", { from, to });
       this.semanticService?.movePath(from, to);
       return { from, to, degraded: false, degradedReason: null };
-    } catch {
+    } catch (error) {
+      if (error instanceof DomainError && error.code === "CONFLICT") {
+        throw error;
+      }
+
       const moved = fallback.moveNote(from, to);
       if (!moved) {
+        if (error instanceof DomainError) {
+          throw error;
+        }
         throw new DomainError("NOT_FOUND", `Note not found: ${from}`);
       }
       this.semanticService?.movePath(from, to);
-      return { from, to, degraded: true, degradedReason: "plugin_unavailable" };
+      const degradedReason =
+        error instanceof DomainError
+          ? error.code === "NOT_FOUND"
+            ? "plugin_not_found_fallback_used"
+            : error.code === "UNAVAILABLE"
+              ? "plugin_unavailable"
+              : `plugin_${error.code.toLowerCase()}_fallback_used`
+          : "plugin_unavailable";
+      return { from, to, degraded: true, degradedReason };
     }
   }
 
@@ -249,8 +264,15 @@ export class NoteService {
       }
     }
 
-    // 3. Process a small batch immediately to confirm it works
-    const flushedCount = queuedCount > 0 ? await this.semanticService.flushIndex(5) : 0;
+    // 3. Flush the queue to completion so the tool semantics match "refresh"
+    let flushedCount = 0;
+    while (this.semanticService.getIndexStatus().pendingCount > 0) {
+      const flushed = await this.semanticService.flushIndex(25);
+      flushedCount += flushed;
+      if (flushed === 0) {
+        break;
+      }
+    }
     const indexStatus = this.semanticService.getIndexStatus();
 
     return {
@@ -260,7 +282,7 @@ export class NoteService {
       pendingCount: indexStatus.pendingCount,
       indexedNoteCount: indexStatus.indexedNoteCount,
       indexedChunkCount: indexStatus.indexedChunkCount,
-      modelReady: true,
+      modelReady: indexStatus.modelReady,
     };
   }
 }

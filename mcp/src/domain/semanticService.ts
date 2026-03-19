@@ -1,6 +1,6 @@
 import { createEmbeddingProvider, type EmbeddingProvider } from "./embeddingProvider";
 import { IndexingQueue } from "./indexingQueue";
-import { buildSemanticChunks, readTitleFromPath } from "./noteDocument";
+import { boundSemanticChunkText, buildSemanticChunks, readTitleFromPath } from "./noteDocument";
 
 type IndexedChunk = {
   id: string;
@@ -275,7 +275,7 @@ export class SemanticService {
         id: chunkId,
         path: value.path,
         title: readTitleFromPath(value.path),
-        text: value.snippet,
+        text: boundSemanticChunkText(value.snippet),
         startLine: 0,
         endLine: 0,
         headingPath: null,

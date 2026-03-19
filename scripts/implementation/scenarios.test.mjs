@@ -37,6 +37,9 @@ test("shared contracts define discriminated edit targets and changes", () => {
   assert.match(source, /export const editChangeSchema = z\.discriminatedUnion\("type"/);
   assert.match(source, /type:\s*z\.literal\("replaceTarget"\)/);
   assert.match(source, /type:\s*z\.literal\("replaceText"\)/);
+  assert.match(source, /jsonStringOr\(noteAnchorSchema, "anchor"\)/);
+  assert.match(source, /jsonStringOr\(editTargetSchema, "target"\)/);
+  assert.match(source, /jsonStringOr\(editChangeSchema, "change"\)/);
 });
 
 test("read/edit tools are unified around edit_target handoff", () => {
@@ -92,6 +95,7 @@ test("note document helpers resolve anchors, revisions, and exact replacement", 
   assert.match(source, /applyEditChange/);
   assert.match(source, /replaceText/);
   assert.match(source, /buildSemanticChunks/);
+  assert.match(source, /boundSemanticChunkText/);
 });
 
 test("semantic service indexes chunks instead of full-note excerpts", () => {
@@ -101,6 +105,7 @@ test("semantic service indexes chunks instead of full-note excerpts", () => {
   assert.match(source, /indexedChunkCount/);
   assert.match(source, /indexedNoteCount/);
   assert.match(source, /chunkIdsByPath/);
+  assert.match(source, /boundSemanticChunkText\(value\.snippet\)/);
   assert.doesNotMatch(source, /snippet:\s*toExcerpt/);
 });
 
@@ -124,9 +129,17 @@ test("note management keeps lifecycle and metadata concerns separate", () => {
   assert.match(source, /TOOL_NAMES\.DELETE_NOTE/);
   assert.match(source, /TOOL_NAMES\.GET_SEMANTIC_INDEX_STATUS/);
   assert.match(source, /TOOL_NAMES\.REFRESH_SEMANTIC_INDEX/);
+  assert.match(source, /Semantic indexing refresh completed/);
   assert.doesNotMatch(source, /TOOL_NAMES\.GET_NOTE/);
   assert.doesNotMatch(source, /TOOL_NAMES\.UPDATE_NOTE_CONTENT/);
   assert.doesNotMatch(source, /TOOL_NAMES\.UPDATE_NOTE_METADATA/);
+});
+
+test("note service drains pending semantic work and preserves fallback move reasons", () => {
+  const source = read("mcp/src/domain/noteService.ts");
+
+  assert.match(source, /while \(this\.semanticService\.getIndexStatus\(\)\.pendingCount > 0\)/);
+  assert.match(source, /plugin_not_found_fallback_used/);
 });
 
 test("server wiring registers search, read/edit, and lifecycle tool groups", () => {

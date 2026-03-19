@@ -4,6 +4,38 @@ import { limitSchema, notePathSchema, positionSchema, rangeSchema } from "./comm
 const isoDateSchema = z.string().datetime({ offset: true });
 const headingPathSchema = z.array(z.string().min(1)).min(1).max(16);
 
+function jsonStringOr<TSchema extends z.ZodTypeAny>(schema: TSchema, fieldName: string) {
+  return z
+    .union([schema, z.string().min(1)])
+    .transform((value, ctx) => {
+      if (typeof value !== "string") {
+        return value;
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(value);
+      } catch {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${fieldName} must be an object or a JSON string representing one`,
+        });
+        return z.NEVER;
+      }
+
+      const normalized = schema.safeParse(parsed);
+      if (!normalized.success) {
+        for (const issue of normalized.error.issues) {
+          ctx.addIssue(issue);
+        }
+        return z.NEVER;
+      }
+
+      return normalized.data;
+    })
+    .pipe(schema);
+}
+
 export const noteAnchorSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("full") }),
   z.object({
@@ -95,7 +127,7 @@ export const editChangeSchema = z.discriminatedUnion("type", [
 
 export const readNoteInputSchema = z.object({
   note: notePathSchema,
-  anchor: noteAnchorSchema.optional().default({ type: "full" }),
+  anchor: jsonStringOr(noteAnchorSchema, "anchor").optional().default({ type: "full" }),
   maxChars: z.number().int().min(200).max(20_000).optional().default(6_000),
   include: z
     .object({
@@ -109,8 +141,8 @@ export const readNoteInputSchema = z.object({
 export const readActiveContextInputSchema = z.object({});
 
 export const editNoteInputSchema = z.object({
-  target: editTargetSchema,
-  change: editChangeSchema,
+  target: jsonStringOr(editTargetSchema, "target"),
+  change: jsonStringOr(editChangeSchema, "change"),
 });
 
 export const createNoteInputSchema = z.object({

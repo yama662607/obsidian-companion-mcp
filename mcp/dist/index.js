@@ -695,13 +695,20 @@ var NoteService = class {
       await this.pluginClient.send("notes.move", { from, to });
       this.semanticService?.movePath(from, to);
       return { from, to, degraded: false, degradedReason: null };
-    } catch {
+    } catch (error) {
+      if (error instanceof DomainError && error.code === "CONFLICT") {
+        throw error;
+      }
       const moved = moveNote(from, to);
       if (!moved) {
+        if (error instanceof DomainError) {
+          throw error;
+        }
         throw new DomainError("NOT_FOUND", `Note not found: ${from}`);
       }
       this.semanticService?.movePath(from, to);
-      return { from, to, degraded: true, degradedReason: "plugin_unavailable" };
+      const degradedReason = error instanceof DomainError ? error.code === "NOT_FOUND" ? "plugin_not_found_fallback_used" : error.code === "UNAVAILABLE" ? "plugin_unavailable" : `plugin_${error.code.toLowerCase()}_fallback_used` : "plugin_unavailable";
+      return { from, to, degraded: true, degradedReason };
     }
   }
   getIndexStatus(pendingSampleLimit) {
@@ -740,7 +747,14 @@ var NoteService = class {
         queuedCount++;
       }
     }
-    const flushedCount = queuedCount > 0 ? await this.semanticService.flushIndex(5) : 0;
+    let flushedCount = 0;
+    while (this.semanticService.getIndexStatus().pendingCount > 0) {
+      const flushed = await this.semanticService.flushIndex(25);
+      flushedCount += flushed;
+      if (flushed === 0) {
+        break;
+      }
+    }
     const indexStatus = this.semanticService.getIndexStatus();
     return {
       totalFound: notes.length,
@@ -749,7 +763,7 @@ var NoteService = class {
       pendingCount: indexStatus.pendingCount,
       indexedNoteCount: indexStatus.indexedNoteCount,
       indexedChunkCount: indexStatus.indexedChunkCount,
-      modelReady: true
+      modelReady: indexStatus.modelReady
     };
   }
 };
@@ -956,6 +970,7 @@ var IndexingQueue = class {
 
 // src/domain/noteDocument.ts
 import path4 from "path";
+var SEMANTIC_CHUNK_MAX_CHARS = 1200;
 function normalizeHeading(title) {
   return title.trim().replace(/\s+/g, " ");
 }
@@ -1325,7 +1340,7 @@ function buildSemanticChunks(notePath, content) {
       chunks.push({
         id: `${notePath}:${currentStart}-${currentEnd}`,
         path: notePath,
-        text: chunkText,
+        text: boundSemanticChunkText(chunkText),
         startLine: currentStart,
         endLine: currentEnd,
         headingPath: heading?.path ?? null
@@ -1334,6 +1349,13 @@ function buildSemanticChunks(notePath, content) {
     currentStart = currentEnd + 1;
   }
   return chunks;
+}
+function boundSemanticChunkText(text, maxChars = SEMANTIC_CHUNK_MAX_CHARS) {
+  const trimmed = text.trim();
+  if (trimmed.length <= maxChars) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, Math.max(maxChars - 1, 0))}\u2026`;
 }
 
 // src/domain/semanticService.ts
@@ -1504,7 +1526,7 @@ var SemanticService = class {
         id: chunkId,
         path: value.path,
         title: readTitleFromPath(value.path),
-        text: value.snippet,
+        text: boundSemanticChunkText(value.snippet),
         startLine: 0,
         endLine: 0,
         headingPath: null,
@@ -2192,6 +2214,31 @@ var rangeSchema = z4.object({
 // src/schemas/toolContracts.ts
 var isoDateSchema = z5.string().datetime({ offset: true });
 var headingPathSchema = z5.array(z5.string().min(1)).min(1).max(16);
+function jsonStringOr(schema, fieldName) {
+  return z5.union([schema, z5.string().min(1)]).transform((value, ctx) => {
+    if (typeof value !== "string") {
+      return value;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      ctx.addIssue({
+        code: z5.ZodIssueCode.custom,
+        message: `${fieldName} must be an object or a JSON string representing one`
+      });
+      return z5.NEVER;
+    }
+    const normalized = schema.safeParse(parsed);
+    if (!normalized.success) {
+      for (const issue of normalized.error.issues) {
+        ctx.addIssue(issue);
+      }
+      return z5.NEVER;
+    }
+    return normalized.data;
+  }).pipe(schema);
+}
 var noteAnchorSchema = z5.discriminatedUnion("type", [
   z5.object({ type: z5.literal("full") }),
   z5.object({
@@ -2277,7 +2324,7 @@ var editChangeSchema = z5.discriminatedUnion("type", [
 ]);
 var readNoteInputSchema = z5.object({
   note: notePathSchema,
-  anchor: noteAnchorSchema.optional().default({ type: "full" }),
+  anchor: jsonStringOr(noteAnchorSchema, "anchor").optional().default({ type: "full" }),
   maxChars: z5.number().int().min(200).max(2e4).optional().default(6e3),
   include: z5.object({
     metadata: z5.boolean().optional().default(true),
@@ -2286,8 +2333,8 @@ var readNoteInputSchema = z5.object({
 });
 var readActiveContextInputSchema = z5.object({});
 var editNoteInputSchema = z5.object({
-  target: editTargetSchema,
-  change: editChangeSchema
+  target: jsonStringOr(editTargetSchema, "target"),
+  change: jsonStringOr(editChangeSchema, "change")
 });
 var createNoteInputSchema = z5.object({
   path: notePathSchema,
@@ -2613,7 +2660,19 @@ function registerNoteTools(server, noteService) {
     async () => {
       try {
         const result = await noteService.refreshIndex();
-        return okResult("Semantic indexing refresh started", result);
+        return okResult(
+          `Semantic indexing refresh completed (${result.pendingCount === 0 ? "ready" : "pending"})`,
+          result,
+          [
+            `totalFound=${result.totalFound}`,
+            `queued=${result.queuedCount}`,
+            `flushed=${result.flushedCount}`,
+            `pending=${result.pendingCount}`,
+            `indexedNotes=${result.indexedNoteCount}`,
+            `indexedChunks=${result.indexedChunkCount}`,
+            `modelReady=${result.modelReady}`
+          ].join("\n")
+        );
       } catch (error) {
         const domainError = error instanceof DomainError ? error : new DomainError("INTERNAL", "refresh index failed");
         return errorResult(domainError);
@@ -3419,6 +3478,7 @@ function registerSearchTools(server, _noteService, semanticService) {
               );
               chunkText = lines.slice(startLine, endLine + 1).join("\n").trim();
             }
+            chunkText = boundSemanticChunkText(chunkText);
             return {
               rank: index + 1,
               score: match.score,

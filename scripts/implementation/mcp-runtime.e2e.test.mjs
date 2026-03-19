@@ -7,10 +7,23 @@ import { pathToFileURL } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
 const e2eVaultRoot = path.join(repoRoot, ".tmp", "mcp-e2e-vault");
+const semanticIndexPath = path.join(
+  e2eVaultRoot,
+  ".obsidian",
+  "plugins",
+  "companion-mcp",
+  "data",
+  "semantic-index.json",
+);
 
 function resetE2EVault() {
   fs.rmSync(e2eVaultRoot, { recursive: true, force: true });
   fs.mkdirSync(e2eVaultRoot, { recursive: true });
+}
+
+function writeLegacyVectorIndex(entries) {
+  fs.mkdirSync(path.dirname(semanticIndexPath), { recursive: true });
+  fs.writeFileSync(semanticIndexPath, JSON.stringify(entries), "utf8");
 }
 
 function inheritedEnv() {
@@ -301,6 +314,7 @@ test("mcp e2e: persisted discovery, read, edit, metadata, and lifecycle flow wor
   });
   assert.ok(!refreshed.isError);
   assert.ok(typeof refreshed.structuredContent.indexedChunkCount === "number");
+  assert.equal(refreshed.structuredContent.pendingCount, 0);
 
   const semantic = await session.client.callTool({
     name: "semantic_search_notes",
@@ -319,6 +333,7 @@ test("mcp e2e: persisted discovery, read, edit, metadata, and lifecycle flow wor
   assert.equal(semantic.structuredContent.returned >= 1, true);
   assert.equal(semantic.structuredContent.results[0].note.path, notePath);
   assert.ok(semantic.structuredContent.results[0].chunk.text.includes("semantic marker updated"));
+  assert.ok(semantic.structuredContent.results[0].chunk.text.length <= 1_200);
 
   const status = await session.client.callTool({
     name: "get_semantic_index_status",
@@ -329,6 +344,8 @@ test("mcp e2e: persisted discovery, read, edit, metadata, and lifecycle flow wor
   assert.ok(!status.isError);
   assert.ok(typeof status.structuredContent.indexedNoteCount === "number");
   assert.ok(typeof status.structuredContent.indexedChunkCount === "number");
+  assert.equal(status.structuredContent.pendingCount, 0);
+  assert.equal(status.structuredContent.ready, true);
 
   const moved = await session.client.callTool({
     name: "move_note",
@@ -348,6 +365,92 @@ test("mcp e2e: persisted discovery, read, edit, metadata, and lifecycle flow wor
   });
   assert.ok(!deleted.isError);
   assert.equal(deleted.structuredContent.deleted, true);
+});
+
+test("mcp e2e: semantic search bounds legacy payloads loaded from disk", async (t) => {
+  resetE2EVault();
+  writeLegacyVectorIndex([
+    [
+      "e2e/legacy.md:0-0",
+      {
+        path: "e2e/legacy.md",
+        snippet: `${"Legacy semantic payload ".repeat(400)}\nTCP semantic marker`,
+        updatedAt: Date.now(),
+        embedding: [1, 0.5, 0.25],
+      },
+    ],
+  ]);
+
+  const session = await createMcpClient({
+    envOverrides: {
+      USE_REMOTE_EMBEDDING: "true",
+    },
+  });
+  t.after(async () => {
+    await session.close();
+  });
+
+  const semantic = await session.client.callTool({
+    name: "semantic_search_notes",
+    arguments: {
+      query: "TCP",
+      topK: 2,
+      maxPerNote: 1,
+      include: {
+        tags: false,
+        frontmatterKeys: [],
+        neighboringLines: 0,
+      },
+    },
+  });
+
+  assert.ok(!semantic.isError);
+  assert.equal(semantic.structuredContent.returned, 1);
+  assert.ok(semantic.structuredContent.results[0].chunk.text.length <= 1_200);
+  assert.ok(semantic.content[0].text.length < 4_000);
+});
+
+test("mcp e2e: read and edit tools accept JSON-string encoded nested arguments", async (t) => {
+  resetE2EVault();
+  const session = await createMcpClient();
+  t.after(async () => {
+    await session.close();
+  });
+
+  const notePath = "e2e/stringified-inputs.md";
+  const created = await session.client.callTool({
+    name: "create_note",
+    arguments: {
+      path: notePath,
+      content: "# String Inputs\n\nHello world\n",
+    },
+  });
+  assert.ok(!created.isError);
+
+  const read = await session.client.callTool({
+    name: "read_note",
+    arguments: {
+      note: notePath,
+      anchor: JSON.stringify({ type: "full" }),
+    },
+  });
+  assert.ok(!read.isError);
+  assert.equal(read.structuredContent.editTarget.note, notePath);
+
+  const edited = await session.client.callTool({
+    name: "edit_note",
+    arguments: {
+      target: JSON.stringify(read.structuredContent.editTarget),
+      change: JSON.stringify({
+        type: "replaceText",
+        find: "Hello",
+        replace: "HELLO",
+        occurrence: "first",
+      }),
+    },
+  });
+  assert.ok(!edited.isError);
+  assert.equal(edited.structuredContent.status, "applied");
 });
 
 test("mcp e2e: active context read/edit handoff works against plugin bridge", async (t) => {
@@ -486,4 +589,72 @@ test("mcp e2e: active context read/edit handoff works against plugin bridge", as
   });
   assert.ok(!inserted.isError);
   assert.equal(inserted.structuredContent.status, "applied");
+});
+
+test("mcp e2e: move fallback preserves the plugin failure reason when filesystem fallback succeeds", async (t) => {
+  resetE2EVault();
+  fs.mkdirSync(path.join(e2eVaultRoot, "e2e"), { recursive: true });
+  fs.writeFileSync(path.join(e2eVaultRoot, "e2e", "fallback-move.md"), "# fallback move\n", "utf8");
+
+  const plugin = await startMockPluginServer((request) => {
+    if (request.method === "health.ping") {
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        protocolVersion: "0.1.0",
+        result: {
+          capabilities: ["health.ping", "notes.move"],
+          availability: "normal",
+          configDir: ".obsidian",
+          vaultPath: e2eVaultRoot,
+        },
+      };
+    }
+
+    if (request.method === "notes.move") {
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        protocolVersion: "0.1.0",
+        error: {
+          code: "NOT_FOUND",
+          message: `Note not found: ${request.params.from}`,
+          data: { correlationId: "mock-move-not-found" },
+        },
+      };
+    }
+
+    return {
+      jsonrpc: "2.0",
+      id: request.id,
+      protocolVersion: "0.1.0",
+      error: {
+        code: "METHOD_NOT_FOUND",
+        message: `Unsupported method: ${request.method}`,
+        data: { correlationId: "mock-corr" },
+      },
+    };
+  });
+
+  const session = await createMcpClient({
+    envOverrides: {
+      OBSIDIAN_PLUGIN_PORT: String(plugin.port),
+    },
+  });
+  t.after(async () => {
+    await session.close();
+    await plugin.close();
+  });
+
+  const moved = await session.client.callTool({
+    name: "move_note",
+    arguments: {
+      from: "e2e/fallback-move.md",
+      to: "e2e/fallback-move-renamed.md",
+    },
+  });
+
+  assert.ok(!moved.isError);
+  assert.equal(moved.structuredContent.degraded, true);
+  assert.equal(moved.structuredContent.degradedReason, "plugin_not_found_fallback_used");
 });

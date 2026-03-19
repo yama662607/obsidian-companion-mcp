@@ -2,7 +2,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseFrontmatter } from "../../../shared/frontmatter";
 import { TOOL_NAMES } from "../constants/toolNames";
 import { DomainError } from "../domain/errors";
-import { findSnippetForQuery, readTitleFromPath } from "../domain/noteDocument";
+import {
+  boundSemanticChunkText,
+  findSnippetForQuery,
+  readTitleFromPath,
+} from "../domain/noteDocument";
 import type { NoteService } from "../domain/noteService";
 import type { SemanticService } from "../domain/semanticService";
 import { errorResult, okResult } from "../domain/toolResult";
@@ -361,6 +365,7 @@ export function registerSearchTools(
                 .join("\n")
                 .trim();
             }
+            chunkText = boundSemanticChunkText(chunkText);
             return {
               rank: index + 1,
               score: match.score,
