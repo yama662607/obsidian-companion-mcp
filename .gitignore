@@ -28,6 +28,7 @@ plugin/main.js
 # Tool caches
 .cache/
 .eslintcache
+.agents/
 
 # Local editor settings (keep workspace settings tracked)
 .vscode/*.code-workspace
