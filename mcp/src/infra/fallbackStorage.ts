@@ -106,7 +106,10 @@ export function writeNote(path: string, content: string): NoteRecord {
 
 export function updateMetadata(path: string, metadata: Record<string, unknown>): NoteRecord {
   const filePath = resolveVaultPath(path);
-  const existing = readNote(path) ?? { content: "", metadata: {}, updatedAt: Date.now(), size: 0 };
+  const existing = readNote(path);
+  if (!existing) {
+    throw new DomainError("NOT_FOUND", `Note not found: ${path}`);
+  }
   const mergedMetadata = { ...existing.metadata, ...metadata };
   const nextContent = applyFrontmatter(existing.content, mergedMetadata);
   ensureParentDir(filePath);

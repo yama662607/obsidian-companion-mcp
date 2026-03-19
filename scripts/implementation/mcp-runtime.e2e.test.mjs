@@ -221,6 +221,20 @@ test("mcp e2e: persisted discovery, read, edit, metadata, and lifecycle flow wor
   });
   assert.ok(!patched.isError);
   assert.deepEqual(patched.structuredContent.metadata.tags, ["mcp", "e2e"]);
+  assert.equal(patched.structuredContent.metadata.status, "active");
+
+  const mergedPatch = await session.client.callTool({
+    name: "patch_note_metadata",
+    arguments: {
+      note: notePath,
+      metadata: {
+        status: "completed",
+      },
+    },
+  });
+  assert.ok(!mergedPatch.isError);
+  assert.deepEqual(mergedPatch.structuredContent.metadata.tags, ["mcp", "e2e"]);
+  assert.equal(mergedPatch.structuredContent.metadata.status, "completed");
 
   const lexical = await session.client.callTool({
     name: "search_notes",
@@ -609,6 +623,19 @@ test("mcp e2e: active context read/edit handoff works against plugin bridge", as
   });
   assert.ok(!inserted.isError);
   assert.equal(inserted.structuredContent.status, "applied");
+
+  const insertAlias = await session.client.callTool({
+    name: "edit_note",
+    arguments: {
+      target: refreshed.structuredContent.editTargets.cursor,
+      change: {
+        type: "insertAtCursor",
+        content: "?",
+      },
+    },
+  });
+  assert.ok(!insertAlias.isError);
+  assert.equal(insertAlias.structuredContent.status, "applied");
 });
 
 test("mcp e2e: read_active_context bounds large structured payloads", async (t) => {
@@ -756,6 +783,58 @@ test("mcp e2e: move fallback preserves the plugin failure reason when filesystem
   assert.ok(!moved.isError);
   assert.equal(moved.structuredContent.degraded, true);
   assert.equal(moved.structuredContent.degradedReason, "plugin_not_found_fallback_used");
+});
+
+test("mcp e2e: patch_note_metadata merges existing frontmatter and missing notes stay missing", async (t) => {
+  resetE2EVault();
+  const session = await createMcpClient();
+  t.after(async () => {
+    await session.close();
+  });
+
+  const notePath = "e2e/frontmatter-merge.md";
+  const created = await session.client.callTool({
+    name: "create_note",
+    arguments: {
+      path: notePath,
+      content: ["---", "tags:", "  - one", "keep: true", "---", "", "# Merge Test"].join("\n"),
+    },
+  });
+  assert.ok(!created.isError);
+
+  const patched = await session.client.callTool({
+    name: "patch_note_metadata",
+    arguments: {
+      note: notePath,
+      metadata: { status: "done" },
+    },
+  });
+  assert.ok(!patched.isError);
+  assert.deepEqual(patched.structuredContent.metadata.tags, ["one"]);
+  assert.equal(patched.structuredContent.metadata.keep, true);
+  assert.equal(patched.structuredContent.metadata.status, "done");
+
+  const read = await session.client.callTool({
+    name: "read_note",
+    arguments: {
+      note: notePath,
+      include: { metadata: true, documentMap: false },
+    },
+  });
+  assert.ok(!read.isError);
+  assert.deepEqual(read.structuredContent.metadata.frontmatter.tags, ["one"]);
+  assert.equal(read.structuredContent.metadata.frontmatter.keep, true);
+  assert.equal(read.structuredContent.metadata.frontmatter.status, "done");
+
+  const missingPatch = await session.client.callTool({
+    name: "patch_note_metadata",
+    arguments: {
+      note: "e2e/does-not-exist.md",
+      metadata: { status: "missing" },
+    },
+  });
+  assert.ok(missingPatch.isError);
+  assert.equal(missingPatch.code, "NOT_FOUND");
 });
 
 test("mcp e2e: persisted note fallbacks preserve specific plugin failure reasons", async (t) => {

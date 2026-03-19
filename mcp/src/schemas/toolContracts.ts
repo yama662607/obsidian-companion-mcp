@@ -113,6 +113,10 @@ export const editChangeSchema = z.discriminatedUnion("type", [
     content: z.string(),
   }),
   z.object({
+    type: z.literal("insertAtCursor"),
+    content: z.string(),
+  }),
+  z.object({
     type: z.literal("replaceText"),
     find: z.string().min(1),
     replace: z.string(),

@@ -36,6 +36,7 @@ test("shared contracts define discriminated edit targets and changes", () => {
   assert.match(source, /source:\s*z\.literal\("active"\)/);
   assert.match(source, /export const editChangeSchema = z\.discriminatedUnion\("type"/);
   assert.match(source, /type:\s*z\.literal\("replaceTarget"\)/);
+  assert.match(source, /type:\s*z\.literal\("insertAtCursor"\)/);
   assert.match(source, /type:\s*z\.literal\("replaceText"\)/);
   assert.match(source, /jsonStringOr\(noteAnchorSchema, "anchor"\)/);
   assert.match(source, /jsonStringOr\(editTargetSchema, "target"\)/);
@@ -146,9 +147,28 @@ test("note service drains pending semantic work and preserves fallback move reas
 
   assert.match(source, /while \(this\.semanticService\.getIndexStatus\(\)\.pendingCount > 0\)/);
   assert.match(source, /private getFallbackDegradedReason/);
+  assert.match(source, /const mergedMetadata = \{ \.\.\.existing\.metadata, \.\.\.metadata \}/);
   assert.match(source, /plugin_validation_fallback_used/);
   assert.match(source, /plugin_conflict_fallback_used/);
   assert.match(source, /plugin_not_found_fallback_used/);
+});
+
+test("metadata patch flow merges existing frontmatter instead of replacing it", () => {
+  const pluginSource = read("plugin/src/main.ts");
+  const fallbackSource = read("mcp/src/infra/fallbackStorage.ts");
+
+  assert.match(
+    pluginSource,
+    /applyFrontmatter\(content, \{ \.\.\.parseFrontmatter\(content\), \.\.\.metadata \}\)/,
+  );
+  assert.match(
+    fallbackSource,
+    /const mergedMetadata = \{ \.\.\.existing\.metadata, \.\.\.metadata \}/,
+  );
+  assert.match(
+    fallbackSource,
+    /throw new DomainError\("NOT_FOUND", `Note not found: \$\{path\}`\)/,
+  );
 });
 
 test("active runtime docs use the current tool surface", () => {

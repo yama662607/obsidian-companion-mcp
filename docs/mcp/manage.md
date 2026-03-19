@@ -78,7 +78,8 @@ Patch note frontmatter without editing markdown body content.
 **Notes**
 
 - body content edit はしない
-- frontmatter の構造は保持する
+- 既存 frontmatter と shallow merge する
+- 指定しなかった既存キーは保持する
 
 ## `move_note`
 

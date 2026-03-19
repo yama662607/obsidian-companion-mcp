@@ -141,9 +141,16 @@ export class NoteService {
     degraded: boolean;
     degradedReason: string | null;
   }> {
+    const existing = fallback.readNote(path);
+    if (!existing) {
+      throw new DomainError("NOT_FOUND", `Note not found: ${path}`);
+    }
+
+    const mergedMetadata = { ...existing.metadata, ...metadata };
+
     try {
-      await this.pluginClient.send("metadata.update", { path, metadata });
-      const record = fallback.updateMetadata(path, metadata);
+      await this.pluginClient.send("metadata.update", { path, metadata: mergedMetadata });
+      const record = fallback.updateMetadata(path, mergedMetadata);
       this.semanticService?.upsert(path, record.content, Date.now());
       return {
         path,
@@ -154,7 +161,7 @@ export class NoteService {
         degradedReason: null,
       };
     } catch (error) {
-      const record = fallback.updateMetadata(path, metadata);
+      const record = fallback.updateMetadata(path, mergedMetadata);
       this.semanticService?.upsert(path, record.content, Date.now());
       return {
         path,

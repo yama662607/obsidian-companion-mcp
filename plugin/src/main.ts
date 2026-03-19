@@ -12,7 +12,7 @@ import {
   TFile,
 } from "obsidian";
 import { validateEditorPosition, validateEditorRange } from "../../shared/editorPositions";
-import { applyFrontmatter } from "../../shared/frontmatter";
+import { applyFrontmatter, parseFrontmatter } from "../../shared/frontmatter";
 import {
   type HandshakeResult,
   type JsonRpcId,
@@ -427,7 +427,7 @@ class LocalJsonRpcHost {
    * Update frontmatter in content. Preserves existing frontmatter structure.
    */
   private updateFrontmatter(content: string, metadata: Record<string, unknown>): string {
-    return applyFrontmatter(content, metadata);
+    return applyFrontmatter(content, { ...parseFrontmatter(content), ...metadata });
   }
 }
 

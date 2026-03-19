@@ -126,6 +126,15 @@ prepend:
 }
 ```
 
+insert at active cursor:
+
+```json
+{
+  "type": "insertAtCursor",
+  "content": "[Review Start] "
+}
+```
+
 exact text replacement:
 
 ```json

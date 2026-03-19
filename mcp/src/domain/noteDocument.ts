@@ -51,6 +51,7 @@ export type EditChange =
   | { type: "replaceTarget"; content: string }
   | { type: "append"; content: string }
   | { type: "prepend"; content: string }
+  | { type: "insertAtCursor"; content: string }
   | {
       type: "replaceText";
       find: string;
@@ -421,6 +422,11 @@ export function applyEditChange(
       return { nextText: `${currentText}${change.content}`, warnings: [] };
     case "prepend":
       return { nextText: `${change.content}${currentText}`, warnings: [] };
+    case "insertAtCursor":
+      throw new DomainError(
+        "VALIDATION",
+        "insertAtCursor is only supported with active cursor targets",
+      );
     case "replaceText":
       return applyExactTextReplace(currentText, change);
     default:

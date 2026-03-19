@@ -424,7 +424,10 @@ function writeNote(path7, content) {
 }
 function updateMetadata(path7, metadata) {
   const filePath = resolveVaultPath(path7);
-  const existing = readNote(path7) ?? { content: "", metadata: {}, updatedAt: Date.now(), size: 0 };
+  const existing = readNote(path7);
+  if (!existing) {
+    throw new DomainError("NOT_FOUND", `Note not found: ${path7}`);
+  }
   const mergedMetadata = { ...existing.metadata, ...metadata };
   const nextContent = applyFrontmatter(existing.content, mergedMetadata);
   ensureParentDir(filePath);
@@ -693,9 +696,14 @@ var NoteService = class {
     }
   }
   async updateMetadata(path7, metadata) {
+    const existing = readNote(path7);
+    if (!existing) {
+      throw new DomainError("NOT_FOUND", `Note not found: ${path7}`);
+    }
+    const mergedMetadata = { ...existing.metadata, ...metadata };
     try {
-      await this.pluginClient.send("metadata.update", { path: path7, metadata });
-      const record = updateMetadata(path7, metadata);
+      await this.pluginClient.send("metadata.update", { path: path7, metadata: mergedMetadata });
+      const record = updateMetadata(path7, mergedMetadata);
       this.semanticService?.upsert(path7, record.content, Date.now());
       return {
         path: path7,
@@ -706,7 +714,7 @@ var NoteService = class {
         degradedReason: null
       };
     } catch (error) {
-      const record = updateMetadata(path7, metadata);
+      const record = updateMetadata(path7, mergedMetadata);
       this.semanticService?.upsert(path7, record.content, Date.now());
       return {
         path: path7,
@@ -1261,6 +1269,11 @@ function applyEditChange(currentText, change) {
       return { nextText: `${currentText}${change.content}`, warnings: [] };
     case "prepend":
       return { nextText: `${change.content}${currentText}`, warnings: [] };
+    case "insertAtCursor":
+      throw new DomainError(
+        "VALIDATION",
+        "insertAtCursor is only supported with active cursor targets"
+      );
     case "replaceText":
       return applyExactTextReplace(currentText, change);
     default:
@@ -2366,6 +2379,10 @@ var editChangeSchema = z5.discriminatedUnion("type", [
   }),
   z5.object({
     type: z5.literal("prepend"),
+    content: z5.string()
+  }),
+  z5.object({
+    type: z5.literal("insertAtCursor"),
     content: z5.string()
   }),
   z5.object({
