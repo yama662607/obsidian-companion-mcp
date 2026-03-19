@@ -154,11 +154,13 @@ test("note service drains pending semantic work and preserves fallback move reas
 test("active runtime docs use the current tool surface", () => {
   const activeDocs = [
     "docs/execution/obsidian-plugin-release-and-device-test.md",
-    "docs/execution/agent-runtime-review-request-prompt-mcp-only.md",
-    "docs/execution/agent-review-request-discovery-scale.md",
-    "docs/execution/agent-dual-mcp-test-request-prompt.md",
-    "docs/execution/agent-review-request-post-vault-hardening-mcp-only.md",
     "docs/execution/agent-dual-mcp-review-playbook.md",
+    "docs/execution/release-gate.md",
+    "docs/execution/tool-surface-hardening-playbook.md",
+    "docs/execution/governance-checklists.md",
+    "docs/execution/owner-matrix.md",
+    "docs/execution/obsidian-community-plugin-publish-guide.md",
+    "docs/execution/obsidian-releases-pr-template.md",
     "docs/execution/test-prompts/README.md",
     "docs/execution/test-prompts/master-real-agent.md",
     "docs/execution/test-prompts/discovery-search.md",
