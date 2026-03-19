@@ -37,6 +37,12 @@
 
 ## 推奨実行順
 
+### まず 1 本だけ試すなら
+
+1. `master-real-agent.md`
+
+### フルで確認するなら
+
 1. `discovery-search.md`
 2. `read-edit-integrity.md`
 3. `semantic-index-compatibility.md`

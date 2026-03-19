@@ -17,6 +17,7 @@ This folder contains historical execution docs, legacy prompt packs, and complet
 - `phase-plan.md`
 - `phase-template.md`
 - `rollout-rollback-plan.md`
+- `community-plugins-entry.json`
 - `evidence/excalidraw-edit-e2e-report-2026-03-17.md`
 - `evidence/go-no-go-approval-2026-03-15.md`
 - `evidence/rollback-rehearsal-2026-03-15.md`
