@@ -18,9 +18,9 @@ import { registerFallbackBehaviorResource } from "./resources/fallbackBehavior";
 import { registerReviewChecklistResource } from "./resources/reviewChecklist";
 import { registerRuntimeStatusResource } from "./resources/runtimeStatus";
 import { registerSchemaSummaryResource } from "./resources/schemaSummary";
-import { registerEditorTools } from "./tools/editorCommands";
-import { registerNoteTool } from "./tools/noteManagement";
-import { registerSemanticSearchTool } from "./tools/semanticSearch";
+import { registerNoteTools } from "./tools/noteManagement";
+import { registerReadEditTools } from "./tools/readEdit";
+import { registerSearchTools } from "./tools/searchTools";
 
 export interface ServerRuntime {
   server: McpServer;
@@ -51,9 +51,9 @@ export function createServer(
   const noteService = new NoteService(pluginClient, semanticService);
 
   // Registration only: all behavior remains in tools/resources/prompts/domain layers.
-  registerSemanticSearchTool(server, semanticService);
-  registerEditorTools(server, editorService);
-  registerNoteTool(server, noteService);
+  registerSearchTools(server, noteService, semanticService);
+  registerReadEditTools(server, noteService, editorService);
+  registerNoteTools(server, noteService);
 
   registerCapabilityMatrixResource(server);
   registerSchemaSummaryResource(server);

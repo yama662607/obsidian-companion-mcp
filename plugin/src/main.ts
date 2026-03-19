@@ -140,6 +140,13 @@ class LocalJsonRpcHost {
         activeFile: activeView?.file?.path ?? null,
         cursor: activeView?.editor ? activeView.editor.getCursor() : null,
         selection: activeView?.editor ? activeView.editor.getSelection() : "",
+        selectionRange:
+          activeView?.editor && activeView.editor.getSelection().length > 0
+            ? {
+                from: activeView.editor.getCursor("from"),
+                to: activeView.editor.getCursor("to"),
+              }
+            : null,
         content: activeView?.editor ? activeView.editor.getValue() : "",
       },
     };
@@ -363,6 +370,13 @@ class LocalJsonRpcHost {
         activeFile: activeView?.file?.path ?? null,
         cursor: activeView.editor.getCursor(),
         selection: activeView.editor.getSelection(),
+        selectionRange:
+          activeView.editor.getSelection().length > 0
+            ? {
+                from: activeView.editor.getCursor("from"),
+                to: activeView.editor.getCursor("to"),
+              }
+            : null,
         content: activeView.editor.getValue(),
       },
     };

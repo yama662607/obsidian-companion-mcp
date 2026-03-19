@@ -12,6 +12,8 @@ export class NoteService {
   async read(path: string): Promise<{
     content: string;
     metadata: Record<string, unknown>;
+    updatedAt: number;
+    size: number;
     degraded: boolean;
     degradedReason: string | null;
   }> {
@@ -24,6 +26,8 @@ export class NoteService {
       return {
         content: hit.content,
         metadata: hit.metadata,
+        updatedAt: hit.updatedAt,
+        size: hit.size,
         degraded: false,
         degradedReason: null,
       };
@@ -35,6 +39,8 @@ export class NoteService {
       return {
         content: hit.content,
         metadata: hit.metadata,
+        updatedAt: hit.updatedAt,
+        size: hit.size,
         degraded: true,
         degradedReason: "plugin_unavailable",
       };
@@ -44,7 +50,13 @@ export class NoteService {
   async write(
     path: string,
     content: string,
-  ): Promise<{ path: string; degraded: boolean; degradedReason: string | null }> {
+  ): Promise<{
+    path: string;
+    updatedAt: number;
+    size: number;
+    degraded: boolean;
+    degradedReason: string | null;
+  }> {
     if (!path) {
       throw new DomainError("VALIDATION", "path is required");
     }
@@ -53,11 +65,23 @@ export class NoteService {
       await this.pluginClient.send("notes.write", { path, content });
       const record = fallback.writeNote(path, content);
       this.semanticService?.upsert(path, record.content, Date.now());
-      return { path, degraded: false, degradedReason: null };
+      return {
+        path,
+        updatedAt: record.updatedAt,
+        size: record.size,
+        degraded: false,
+        degradedReason: null,
+      };
     } catch {
       const record = fallback.writeNote(path, content);
       this.semanticService?.upsert(path, record.content, Date.now());
-      return { path, degraded: true, degradedReason: "plugin_unavailable" };
+      return {
+        path,
+        updatedAt: record.updatedAt,
+        size: record.size,
+        degraded: true,
+        degradedReason: "plugin_unavailable",
+      };
     }
   }
 
@@ -89,6 +113,8 @@ export class NoteService {
   ): Promise<{
     path: string;
     metadata: Record<string, unknown>;
+    updatedAt: number;
+    size: number;
     degraded: boolean;
     degradedReason: string | null;
   }> {
@@ -96,13 +122,22 @@ export class NoteService {
       await this.pluginClient.send("metadata.update", { path, metadata });
       const record = fallback.updateMetadata(path, metadata);
       this.semanticService?.upsert(path, record.content, Date.now());
-      return { path, metadata: record.metadata, degraded: false, degradedReason: null };
+      return {
+        path,
+        metadata: record.metadata,
+        updatedAt: record.updatedAt,
+        size: record.size,
+        degraded: false,
+        degradedReason: null,
+      };
     } catch {
       const record = fallback.updateMetadata(path, metadata);
       this.semanticService?.upsert(path, record.content, Date.now());
       return {
         path,
         metadata: record.metadata,
+        updatedAt: record.updatedAt,
+        size: record.size,
         degraded: true,
         degradedReason: "plugin_unavailable",
       };
@@ -155,7 +190,8 @@ export class NoteService {
 
   getIndexStatus(pendingSampleLimit: number): {
     pendingCount: number;
-    indexedCount: number;
+    indexedNoteCount: number;
+    indexedChunkCount: number;
     running: boolean;
     ready: boolean;
     isEmpty: boolean;
@@ -165,7 +201,8 @@ export class NoteService {
     if (!this.semanticService) {
       return {
         pendingCount: 0,
-        indexedCount: 0,
+        indexedNoteCount: 0,
+        indexedChunkCount: 0,
         running: false,
         ready: false,
         isEmpty: true,
@@ -182,7 +219,8 @@ export class NoteService {
     queuedCount: number;
     flushedCount: number;
     pendingCount: number;
-    indexedCount: number;
+    indexedNoteCount: number;
+    indexedChunkCount: number;
     modelReady: boolean;
   }> {
     if (!this.semanticService) {
@@ -191,7 +229,8 @@ export class NoteService {
         queuedCount: 0,
         flushedCount: 0,
         pendingCount: 0,
-        indexedCount: 0,
+        indexedNoteCount: 0,
+        indexedChunkCount: 0,
         modelReady: false,
       };
     }
@@ -219,7 +258,8 @@ export class NoteService {
       queuedCount,
       flushedCount,
       pendingCount: indexStatus.pendingCount,
-      indexedCount: indexStatus.indexedCount,
+      indexedNoteCount: indexStatus.indexedNoteCount,
+      indexedChunkCount: indexStatus.indexedChunkCount,
       modelReady: true,
     };
   }

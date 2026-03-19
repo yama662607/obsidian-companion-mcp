@@ -24,8 +24,8 @@ export function extractToolRegistrations(source) {
     const name = match[1];
     const start = match.index ?? 0;
     const window = source.slice(start, start + 2500);
-    const endIndex = window.indexOf("async ");
-    const optionsBlock = endIndex >= 0 ? window.slice(0, endIndex) : window;
+    const callbackIndex = window.search(/\n\s*(?:async\s*)?\(/);
+    const optionsBlock = callbackIndex >= 0 ? window.slice(0, callbackIndex) : window;
     tools.push({ name, optionsBlock });
   }
   return tools;
@@ -36,12 +36,20 @@ export function validateSchemaPolicy(fileSources) {
   const boundedLimitRegex = /limit\s*:\s*z\.number\(\)\.[\s\S]*?\.min\(\d+\)[\s\S]*?\.max\(\d+\)/m;
   const inlineSchemaRegex = /inputSchema\s*:\s*z\.object\s*\(/;
   const namedSchemaRegex = /inputSchema\s*:\s*[A-Za-z0-9_]*InputSchema\b/;
+  const inlineOutputSchemaRegex = /outputSchema\s*:\s*z\.object\s*\(/;
+  const namedOutputSchemaRegex = /outputSchema\s*:\s*[A-Za-z0-9_]*OutputSchema\b/;
 
   for (const item of fileSources) {
     const tools = extractToolRegistrations(item.source);
     for (const tool of tools) {
       if (!inlineSchemaRegex.test(tool.optionsBlock) && !namedSchemaRegex.test(tool.optionsBlock)) {
         errors.push(`${item.filePath}:${tool.name} must use z.object or a named *InputSchema`);
+      }
+      if (
+        !inlineOutputSchemaRegex.test(tool.optionsBlock) &&
+        !namedOutputSchemaRegex.test(tool.optionsBlock)
+      ) {
+        errors.push(`${item.filePath}:${tool.name} must publish outputSchema`);
       }
       if (/\blimit\s*:/.test(tool.optionsBlock) && !boundedLimitRegex.test(tool.optionsBlock)) {
         errors.push(`${item.filePath}:${tool.name} limit must be bounded with min/max`);

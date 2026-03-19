@@ -58,3 +58,40 @@ export function validateEditorRange(content: string, range: EditorRangeLike): st
 
   return null;
 }
+
+export function editorPositionToOffset(content: string, position: EditorPositionLike): number {
+  const lines = getEditorLines(content);
+  let offset = 0;
+
+  for (let index = 0; index < position.line; index += 1) {
+    offset += (lines[index]?.length ?? 0) + 1;
+  }
+
+  return offset + position.ch;
+}
+
+export function sliceEditorRange(content: string, range: EditorRangeLike): string {
+  const validationError = validateEditorRange(content, range);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const start = editorPositionToOffset(content, range.from);
+  const end = editorPositionToOffset(content, range.to);
+  return content.slice(start, end);
+}
+
+export function replaceEditorRangeContent(
+  content: string,
+  range: EditorRangeLike,
+  replacement: string,
+): string {
+  const validationError = validateEditorRange(content, range);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const start = editorPositionToOffset(content, range.from);
+  const end = editorPositionToOffset(content, range.to);
+  return `${content.slice(0, start)}${replacement}${content.slice(end)}`;
+}

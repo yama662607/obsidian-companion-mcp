@@ -43,7 +43,6 @@ async function createMcpClient(options = {}) {
   const env = {
     ...inherited,
     OBSIDIAN_COMPANION_API_KEY: "local-dev-key",
-    // Default E2E isolation: do not talk to a real Obsidian plugin unless a test opts in.
     OBSIDIAN_PLUGIN_PORT: "1",
     ...envOverrides,
   };
@@ -76,6 +75,21 @@ async function createMcpClient(options = {}) {
       await transport.close();
     },
   };
+}
+
+function positionToOffset(content, position) {
+  const lines = content.split("\n");
+  let offset = 0;
+  for (let index = 0; index < position.line; index += 1) {
+    offset += (lines[index]?.length ?? 0) + 1;
+  }
+  return offset + position.ch;
+}
+
+function replaceRange(content, range, text) {
+  const start = positionToOffset(content, range.from);
+  const end = positionToOffset(content, range.to);
+  return `${content.slice(0, start)}${text}${content.slice(end)}`;
 }
 
 async function startMockPluginServer(responseFactory) {
@@ -113,7 +127,7 @@ async function startMockPluginServer(responseFactory) {
   };
 }
 
-test("mcp e2e: refactored tool surface is discoverable", async (t) => {
+test("mcp e2e: final tool surface is discoverable", async (t) => {
   const session = await createMcpClient();
   t.after(async () => {
     await session.close();
@@ -123,108 +137,31 @@ test("mcp e2e: refactored tool surface is discoverable", async (t) => {
   const names = listed.tools.map((tool) => tool.name);
   const toolByName = new Map(listed.tools.map((tool) => [tool.name, tool]));
 
-  assert.ok(names.includes("search_notes_semantic"));
-  assert.ok(names.includes("create_note"));
   assert.ok(names.includes("list_notes"));
+  assert.ok(names.includes("search_notes"));
+  assert.ok(names.includes("semantic_search_notes"));
+  assert.ok(names.includes("read_note"));
+  assert.ok(names.includes("read_active_context"));
+  assert.ok(names.includes("edit_note"));
+  assert.ok(names.includes("create_note"));
+  assert.ok(names.includes("patch_note_metadata"));
   assert.ok(names.includes("move_note"));
-  assert.ok(names.includes("get_index_status"));
-  assert.ok(names.includes("get_note"));
-  assert.ok(names.includes("update_note_content"));
   assert.ok(names.includes("delete_note"));
-  assert.ok(names.includes("update_note_metadata"));
-  assert.ok(!names.includes("manage_note"));
-  assert.ok(!names.includes("manage_metadata"));
+  assert.ok(names.includes("get_semantic_index_status"));
+  assert.ok(names.includes("refresh_semantic_index"));
+  assert.ok(!names.includes("get_note"));
+  assert.ok(!names.includes("update_note_content"));
+  assert.ok(!names.includes("get_active_context"));
+  assert.ok(!names.includes("replace_range"));
 
-  const deleteTool = toolByName.get("delete_note");
-  assert.ok(deleteTool);
-  assert.equal(deleteTool.annotations?.destructiveHint, true);
-
-  const deleteInputProperties = deleteTool.inputSchema?.properties
-    ? Object.keys(deleteTool.inputSchema.properties)
-    : [];
-  assert.deepEqual(deleteInputProperties, ["path"]);
-  assert.deepEqual(deleteTool.inputSchema?.required, ["path"]);
-
-  const getTool = toolByName.get("get_note");
-  assert.ok(getTool);
-  assert.equal(getTool.annotations?.readOnlyHint, true);
-
-  const listTool = toolByName.get("list_notes");
-  assert.ok(listTool);
-  assert.equal(listTool.annotations?.readOnlyHint, true);
-
-  const indexStatusTool = toolByName.get("get_index_status");
-  assert.ok(indexStatusTool);
-  assert.equal(indexStatusTool.annotations?.readOnlyHint, true);
-
-  const updateMetadataTool = toolByName.get("update_note_metadata");
-  assert.ok(updateMetadataTool);
-  assert.equal(updateMetadataTool.annotations?.idempotentHint, true);
+  assert.equal(toolByName.get("read_note")?.annotations?.readOnlyHint, true);
+  assert.equal(toolByName.get("read_active_context")?.annotations?.readOnlyHint, true);
+  assert.equal(toolByName.get("search_notes")?.annotations?.readOnlyHint, true);
+  assert.equal(toolByName.get("semantic_search_notes")?.annotations?.readOnlyHint, true);
+  assert.equal(toolByName.get("delete_note")?.annotations?.destructiveHint, true);
 });
 
-test("mcp e2e: discovery tools support bounded listing, move, and index inspection", async (t) => {
-  resetE2EVault();
-  const session = await createMcpClient();
-  t.after(async () => {
-    await session.close();
-  });
-
-  fs.mkdirSync(path.join(e2eVaultRoot, "e2e", "folder"), { recursive: true });
-  fs.writeFileSync(path.join(e2eVaultRoot, "e2e", "folder", "a.md"), "# A\n\nbody", "utf8");
-  fs.writeFileSync(path.join(e2eVaultRoot, "e2e", "folder", "b.md"), "# B\n\nbody", "utf8");
-
-  const listedFirst = await session.client.callTool({
-    name: "list_notes",
-    arguments: {
-      path: "e2e/folder",
-      limit: 1,
-    },
-  });
-  assert.ok(!listedFirst.isError);
-  assert.equal(listedFirst.structuredContent.entries.length, 1);
-  assert.equal(listedFirst.structuredContent.hasMore, true);
-  assert.ok(typeof listedFirst.structuredContent.nextCursor === "string");
-
-  const listedSecond = await session.client.callTool({
-    name: "list_notes",
-    arguments: {
-      path: "e2e/folder",
-      limit: 1,
-      cursor: listedFirst.structuredContent.nextCursor,
-    },
-  });
-  assert.ok(!listedSecond.isError);
-  assert.equal(listedSecond.structuredContent.entries.length, 1);
-  assert.notEqual(
-    listedFirst.structuredContent.entries[0].path,
-    listedSecond.structuredContent.entries[0].path,
-  );
-
-  const moved = await session.client.callTool({
-    name: "move_note",
-    arguments: {
-      from: "e2e/folder/a.md",
-      to: "e2e/archive/a.md",
-    },
-  });
-  assert.ok(!moved.isError);
-  assert.equal(moved.structuredContent.from, "e2e/folder/a.md");
-  assert.equal(moved.structuredContent.to, "e2e/archive/a.md");
-  assert.equal(fs.existsSync(path.join(e2eVaultRoot, "e2e", "folder", "a.md")), false);
-  assert.equal(fs.existsSync(path.join(e2eVaultRoot, "e2e", "archive", "a.md")), true);
-
-  const indexStatus = await session.client.callTool({
-    name: "get_index_status",
-    arguments: {
-      pendingSampleLimit: 5,
-    },
-  });
-  assert.ok(!indexStatus.isError);
-  assert.ok(typeof indexStatus.structuredContent.pendingCount === "number");
-  assert.ok(Array.isArray(indexStatus.structuredContent.pendingSample));
-});
-
-test("mcp e2e: note, metadata, and semantic flow behaves consistently", async (t) => {
+test("mcp e2e: persisted discovery, read, edit, metadata, and lifecycle flow works", async (t) => {
   resetE2EVault();
   const session = await createMcpClient({
     envOverrides: {
@@ -235,582 +172,310 @@ test("mcp e2e: note, metadata, and semantic flow behaves consistently", async (t
     await session.close();
   });
 
-  const pathArg = "e2e/runtime-refactor.md";
+  const notePath = "e2e/runtime-refactor.md";
 
   const created = await session.client.callTool({
     name: "create_note",
     arguments: {
-      path: pathArg,
-      content: "# Runtime Refactor\n\nsemantic marker line",
+      path: notePath,
+      content: [
+        "# Runtime Refactor",
+        "",
+        "## Action Items",
+        "- Update onboarding checklist",
+        "- Add handoff notes",
+        "",
+        "semantic marker line",
+      ].join("\n"),
     },
   });
   assert.ok(!created.isError);
-  assert.ok(fs.existsSync(path.join(e2eVaultRoot, pathArg)));
+  assert.equal(created.structuredContent.note.path, notePath);
 
-  const updatedMetadata = await session.client.callTool({
-    name: "update_note_metadata",
+  const patched = await session.client.callTool({
+    name: "patch_note_metadata",
     arguments: {
-      path: pathArg,
+      note: notePath,
       metadata: {
-        title: "Runtime Refactor",
         tags: ["mcp", "e2e"],
+        status: "active",
       },
     },
   });
-  assert.ok(!updatedMetadata.isError);
+  assert.ok(!patched.isError);
+  assert.deepEqual(patched.structuredContent.metadata.tags, ["mcp", "e2e"]);
 
-  const readBack = await session.client.callTool({
-    name: "get_note",
-    arguments: { path: pathArg },
-  });
-  assert.ok(!readBack.isError);
-  assert.equal(readBack.structuredContent.metadata.title, "Runtime Refactor");
-  assert.ok(
-    /title:\s*("Runtime Refactor"|Runtime Refactor)/.test(readBack.structuredContent.content),
-  );
-
-  const searched = await session.client.callTool({
-    name: "search_notes_semantic",
+  const lexical = await session.client.callTool({
+    name: "search_notes",
     arguments: {
-      query: "semantic marker",
+      query: "handoff",
       limit: 5,
-    },
-  });
-  assert.ok(!searched.isError);
-  assert.ok(Array.isArray(searched.structuredContent.matches));
-  assert.ok(typeof searched.structuredContent.indexStatus.pendingCount === "number");
-  assert.ok(typeof searched.structuredContent.indexStatus.isEmpty === "boolean");
-  assert.equal(searched.structuredContent.degraded, false);
-  assert.equal(searched.structuredContent.degradedReason, null);
-  assert.ok(searched.structuredContent.matches.some((match) => match.path === pathArg));
-
-  const deleted = await session.client.callTool({
-    name: "delete_note",
-    arguments: { path: pathArg },
-  });
-  assert.ok(!deleted.isError);
-  assert.equal(deleted.structuredContent.deleted, true);
-});
-
-test("mcp e2e: semantic search returns bounded excerpts for large notes", async (t) => {
-  resetE2EVault();
-  const session = await createMcpClient({
-    envOverrides: {
-      USE_REMOTE_EMBEDDING: "true",
-    },
-  });
-  t.after(async () => {
-    await session.close();
-  });
-
-  const repeated = "large semantic body ".repeat(30);
-  const pathArg = "e2e/large-search.md";
-
-  const created = await session.client.callTool({
-    name: "create_note",
-    arguments: {
-      path: pathArg,
-      content: `# Large Search\n\n${repeated}\nunique finder token`,
-    },
-  });
-  assert.ok(!created.isError);
-
-  const searched = await session.client.callTool({
-    name: "search_notes_semantic",
-    arguments: {
-      query: "unique finder token",
-      limit: 3,
-    },
-  });
-  assert.ok(!searched.isError);
-
-  const match = searched.structuredContent.matches.find((item) => item.path === pathArg);
-  assert.ok(match);
-  assert.ok(typeof match.excerpt === "string");
-  assert.ok(match.excerpt.length <= 240);
-  assert.ok(!("snippet" in match));
-});
-
-test("mcp e2e: update_note_content preserves YAML array frontmatter", async (t) => {
-  resetE2EVault();
-  const session = await createMcpClient();
-  t.after(async () => {
-    await session.close();
-  });
-
-  const pathArg = "e2e/frontmatter-content.md";
-  const content = `---
-tags:
-  - x
-  - y
-labels:
-  - l1
-  - l2
----
-
-# Frontmatter Content
-`;
-
-  const updated = await session.client.callTool({
-    name: "update_note_content",
-    arguments: {
-      path: pathArg,
-      content,
-    },
-  });
-  assert.ok(!updated.isError);
-
-  const readBack = await session.client.callTool({
-    name: "get_note",
-    arguments: { path: pathArg },
-  });
-  assert.ok(!readBack.isError);
-  assert.deepEqual(readBack.structuredContent.metadata.tags, ["x", "y"]);
-  assert.deepEqual(readBack.structuredContent.metadata.labels, ["l1", "l2"]);
-
-  const saved = fs.readFileSync(path.join(e2eVaultRoot, pathArg), "utf8");
-  assert.match(saved, /tags:\s*\n {2}- x\n {2}- y/);
-  assert.match(saved, /labels:\s*\n {2}- l1\n {2}- l2/);
-});
-
-test("mcp e2e: get_note preserves array metadata types", async (t) => {
-  resetE2EVault();
-  const session = await createMcpClient();
-  t.after(async () => {
-    await session.close();
-  });
-
-  const pathArg = "e2e/frontmatter-metadata.md";
-
-  const created = await session.client.callTool({
-    name: "create_note",
-    arguments: {
-      path: pathArg,
-      content: "# Metadata Arrays",
-    },
-  });
-  assert.ok(!created.isError);
-
-  const updatedMetadata = await session.client.callTool({
-    name: "update_note_metadata",
-    arguments: {
-      path: pathArg,
-      metadata: {
-        tags: ["a", "b"],
-        nums: [1, 2],
+      include: {
+        snippet: true,
+        matchLocations: true,
+        tags: true,
+        frontmatterKeys: ["status"],
       },
     },
   });
-  assert.ok(!updatedMetadata.isError);
+  assert.ok(!lexical.isError);
+  assert.equal(lexical.structuredContent.returned, 1);
+  assert.equal(lexical.structuredContent.results[0].note.path, notePath);
+  assert.ok(
+    !lexical.structuredContent.results[0].snippet.text.includes("# Runtime Refactor\n\n##"),
+  );
 
-  const readBack = await session.client.callTool({
-    name: "get_note",
-    arguments: { path: pathArg },
-  });
-  assert.ok(!readBack.isError);
-  assert.deepEqual(readBack.structuredContent.metadata.tags, ["a", "b"]);
-  assert.deepEqual(readBack.structuredContent.metadata.nums, [1, 2]);
-
-  const saved = fs.readFileSync(path.join(e2eVaultRoot, pathArg), "utf8");
-  assert.match(saved, /tags:\s*\n {2}- a\n {2}- b/);
-  assert.match(saved, /nums:\s*\n {2}- 1\n {2}- 2/);
-});
-
-test("mcp e2e: update_note_content preserves existing metadata when body changes", async (t) => {
-  resetE2EVault();
-  const session = await createMcpClient();
-  t.after(async () => {
-    await session.close();
-  });
-
-  const pathArg = "e2e/preserve-metadata.md";
-
-  const created = await session.client.callTool({
-    name: "create_note",
+  const readHeading = await session.client.callTool({
+    name: "read_note",
     arguments: {
-      path: pathArg,
-      content: "# Original Body\n\nbefore",
-    },
-  });
-  assert.ok(!created.isError);
-
-  const updatedMetadata = await session.client.callTool({
-    name: "update_note_metadata",
-    arguments: {
-      path: pathArg,
-      metadata: {
-        tags: ["keep", "me"],
-        status: "draft",
+      note: notePath,
+      anchor: {
+        type: "heading",
+        headingPath: ["Action Items"],
+      },
+      maxChars: 500,
+      include: {
+        metadata: true,
+        documentMap: true,
       },
     },
   });
-  assert.ok(!updatedMetadata.isError);
+  assert.ok(!readHeading.isError);
+  assert.equal(readHeading.structuredContent.note.path, notePath);
+  assert.equal(readHeading.structuredContent.editTarget.source, "note");
+  assert.equal(readHeading.structuredContent.selection.anchor.type, "heading");
+  assert.deepEqual(readHeading.structuredContent.metadata.tags, ["mcp", "e2e"]);
 
-  const updatedContent = await session.client.callTool({
-    name: "update_note_content",
+  const appended = await session.client.callTool({
+    name: "edit_note",
     arguments: {
-      path: pathArg,
-      content: "# Updated Body\n\nafter",
+      target: readHeading.structuredContent.editTarget,
+      change: {
+        type: "append",
+        content: "\n- Review runtime status",
+      },
     },
   });
-  assert.ok(!updatedContent.isError);
+  assert.ok(!appended.isError);
+  assert.equal(appended.structuredContent.status, "applied");
 
-  const readBack = await session.client.callTool({
-    name: "get_note",
-    arguments: { path: pathArg },
-  });
-  assert.ok(!readBack.isError);
-  assert.deepEqual(readBack.structuredContent.metadata.tags, ["keep", "me"]);
-  assert.equal(readBack.structuredContent.metadata.status, "draft");
-  assert.match(readBack.structuredContent.content, /tags:\s*\n {2}- keep\n {2}- me/);
-  assert.match(readBack.structuredContent.content, /status:\s*draft/);
-  assert.match(readBack.structuredContent.content, /# Updated Body/);
-});
-
-test("mcp e2e: note operations reject vault-escaping paths", async (t) => {
-  resetE2EVault();
-  const session = await createMcpClient();
-  t.after(async () => {
-    await session.close();
-  });
-
-  const attempts = await Promise.all([
-    session.client.callTool({
-      name: "create_note",
-      arguments: { path: "../escape.md", content: "x" },
-    }),
-    session.client.callTool({
-      name: "get_note",
-      arguments: { path: "/tmp/escape.md" },
-    }),
-    session.client.callTool({
-      name: "delete_note",
-      arguments: { path: "../escape.md" },
-    }),
-  ]);
-
-  for (const result of attempts) {
-    assert.equal(result.isError, true);
-    assert.equal(result.structuredContent.code, "VALIDATION");
-    assert.ok(
-      /Invalid vault-relative path|Path escapes vault root/.test(result.structuredContent.message),
-    );
-  }
-});
-
-test("mcp e2e: refresh_semantic_index skips hidden directories", async (t) => {
-  resetE2EVault();
-  fs.mkdirSync(path.join(e2eVaultRoot, "visible"), { recursive: true });
-  fs.mkdirSync(path.join(e2eVaultRoot, ".hidden"), { recursive: true });
-  fs.writeFileSync(
-    path.join(e2eVaultRoot, "visible", "note.md"),
-    "# Visible\n\nsemantic target",
-    "utf8",
-  );
-  fs.writeFileSync(
-    path.join(e2eVaultRoot, ".hidden", "secret.md"),
-    "# Hidden\n\nshould be ignored",
-    "utf8",
-  );
-
-  const session = await createMcpClient({
-    envOverrides: {
-      USE_REMOTE_EMBEDDING: "true",
+  const readDocument = await session.client.callTool({
+    name: "read_note",
+    arguments: {
+      note: notePath,
+      maxChars: 2000,
+      include: {
+        metadata: true,
+        documentMap: false,
+      },
     },
   });
-  t.after(async () => {
-    await session.close();
+  assert.ok(!readDocument.isError);
+  assert.match(readDocument.structuredContent.content.text, /Review runtime status/);
+
+  const replaced = await session.client.callTool({
+    name: "edit_note",
+    arguments: {
+      target: readDocument.structuredContent.documentEditTarget,
+      change: {
+        type: "replaceText",
+        find: "semantic marker line",
+        replace: "semantic marker updated",
+        occurrence: "first",
+      },
+    },
   });
+  assert.ok(!replaced.isError);
+  assert.equal(replaced.structuredContent.status, "applied");
 
   const refreshed = await session.client.callTool({
     name: "refresh_semantic_index",
     arguments: {},
   });
   assert.ok(!refreshed.isError);
-  assert.equal(refreshed.structuredContent.totalFound, 1);
-  assert.equal(refreshed.structuredContent.queuedCount, 1);
-  assert.equal(refreshed.structuredContent.flushedCount, 1);
+  assert.ok(typeof refreshed.structuredContent.indexedChunkCount === "number");
 
-  const searched = await session.client.callTool({
-    name: "search_notes_semantic",
+  const semantic = await session.client.callTool({
+    name: "semantic_search_notes",
     arguments: {
-      query: "semantic target",
-      limit: 5,
-    },
-  });
-  assert.ok(!searched.isError);
-  assert.ok(searched.structuredContent.matches.some((match) => match.path === "visible/note.md"));
-  assert.ok(!searched.structuredContent.matches.some((match) => match.path.includes(".hidden")));
-});
-
-test("mcp e2e: startup can discover vault path from plugin handshake", async (t) => {
-  const discoveredVaultRoot = path.join(repoRoot, ".tmp", "mcp-e2e-auto-vault");
-  fs.rmSync(discoveredVaultRoot, { recursive: true, force: true });
-  fs.mkdirSync(discoveredVaultRoot, { recursive: true });
-
-  const mockPlugin = await startMockPluginServer((request) => {
-    if (request.method === "health.ping") {
-      return {
-        jsonrpc: "2.0",
-        id: request.id,
-        protocolVersion: request.protocolVersion,
-        result: {
-          capabilities: ["health.ping"],
-          availability: "normal",
-          configDir: ".obsidian",
-          vaultPath: discoveredVaultRoot,
-        },
-      };
-    }
-
-    return {
-      jsonrpc: "2.0",
-      id: request.id,
-      error: {
-        code: "UNAVAILABLE",
-        message: "mock plugin only supports health.ping",
-        data: { correlationId: "corr-mock-plugin" },
+      query: "semantic marker updated",
+      topK: 3,
+      maxPerNote: 2,
+      include: {
+        tags: true,
+        frontmatterKeys: ["status"],
+        neighboringLines: 1,
       },
-    };
-  });
-
-  const session = await createMcpClient({
-    includeDefaultVaultPath: false,
-    unsetEnvKeys: ["OBSIDIAN_VAULT_PATH", "OBSIDIAN_CONFIG_DIR"],
-    envOverrides: {
-      OBSIDIAN_PLUGIN_PORT: String(mockPlugin.port),
     },
   });
+  assert.ok(!semantic.isError);
+  assert.equal(semantic.structuredContent.returned >= 1, true);
+  assert.equal(semantic.structuredContent.results[0].note.path, notePath);
+  assert.ok(semantic.structuredContent.results[0].chunk.text.includes("semantic marker updated"));
 
-  t.after(async () => {
-    await session.close();
-    await mockPlugin.close();
-  });
-
-  const listed = await session.client.listTools();
-  assert.ok(listed.tools.length > 0);
-
-  const created = await session.client.callTool({
-    name: "create_note",
+  const status = await session.client.callTool({
+    name: "get_semantic_index_status",
     arguments: {
-      path: "auto/discovered.md",
-      content: "# Auto Configured Vault",
+      pendingSampleLimit: 5,
     },
   });
+  assert.ok(!status.isError);
+  assert.ok(typeof status.structuredContent.indexedNoteCount === "number");
+  assert.ok(typeof status.structuredContent.indexedChunkCount === "number");
 
-  assert.ok(!created.isError);
-  assert.equal(fs.existsSync(path.join(discoveredVaultRoot, "auto", "discovered.md")), true);
-});
-
-test("mcp e2e: delete_note returns success when plugin already removed the file", async (t) => {
-  const discoveredVaultRoot = path.join(repoRoot, ".tmp", "mcp-e2e-delete-via-plugin");
-  const notePath = "1_Inbox/plugin-delete.md";
-  const absoluteNotePath = path.join(discoveredVaultRoot, notePath);
-
-  fs.rmSync(discoveredVaultRoot, { recursive: true, force: true });
-  fs.mkdirSync(path.dirname(absoluteNotePath), { recursive: true });
-  fs.writeFileSync(absoluteNotePath, "# plugin delete test\n", "utf8");
-
-  const mockPlugin = await startMockPluginServer((request) => {
-    if (request.method === "health.ping") {
-      return {
-        jsonrpc: "2.0",
-        id: request.id,
-        protocolVersion: request.protocolVersion,
-        result: {
-          capabilities: ["health.ping", "notes.delete"],
-          availability: "normal",
-          configDir: ".obsidian",
-          vaultPath: discoveredVaultRoot,
-        },
-      };
-    }
-
-    if (request.method === "notes.delete") {
-      fs.rmSync(absoluteNotePath, { force: true });
-      return {
-        jsonrpc: "2.0",
-        id: request.id,
-        protocolVersion: request.protocolVersion,
-        result: { success: true },
-      };
-    }
-
-    return {
-      jsonrpc: "2.0",
-      id: request.id,
-      error: {
-        code: "UNAVAILABLE",
-        message: "mock plugin only supports health.ping and notes.delete",
-        data: { correlationId: "corr-mock-plugin-delete" },
-      },
-    };
-  });
-
-  const session = await createMcpClient({
-    includeDefaultVaultPath: false,
-    unsetEnvKeys: ["OBSIDIAN_VAULT_PATH", "OBSIDIAN_CONFIG_DIR"],
-    envOverrides: {
-      OBSIDIAN_PLUGIN_PORT: String(mockPlugin.port),
+  const moved = await session.client.callTool({
+    name: "move_note",
+    arguments: {
+      from: notePath,
+      to: "e2e/archive/runtime-refactor.md",
     },
   });
-
-  t.after(async () => {
-    await session.close();
-    await mockPlugin.close();
-  });
+  assert.ok(!moved.isError);
+  assert.equal(moved.structuredContent.to, "e2e/archive/runtime-refactor.md");
 
   const deleted = await session.client.callTool({
     name: "delete_note",
-    arguments: { path: notePath },
+    arguments: {
+      note: "e2e/archive/runtime-refactor.md",
+    },
   });
-
   assert.ok(!deleted.isError);
   assert.equal(deleted.structuredContent.deleted, true);
-  assert.equal(deleted.structuredContent.degraded, false);
-  assert.equal(fs.existsSync(absoluteNotePath), false);
 });
 
-test("mcp e2e: runtime status resource is readable", async (t) => {
-  const session = await createMcpClient();
-  t.after(async () => {
-    await session.close();
+test("mcp e2e: active context read/edit handoff works against plugin bridge", async (t) => {
+  resetE2EVault();
+  let context = {
+    activeFile: "e2e/active.md",
+    cursor: { line: 0, ch: 10 },
+    selection: "beta",
+    selectionRange: {
+      from: { line: 0, ch: 6 },
+      to: { line: 0, ch: 10 },
+    },
+    content: "alpha beta gamma",
+  };
+
+  const plugin = await startMockPluginServer((request) => {
+    if (request.method === "health.ping") {
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        protocolVersion: "0.1.0",
+        result: {
+          capabilities: [
+            "health.ping",
+            "editor.getContext",
+            "editor.applyCommand",
+            "notes.read",
+            "notes.write",
+            "notes.delete",
+            "notes.move",
+            "metadata.update",
+          ],
+          availability: "normal",
+          configDir: ".obsidian",
+          vaultPath: e2eVaultRoot,
+        },
+      };
+    }
+
+    if (request.method === "editor.getContext") {
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        protocolVersion: "0.1.0",
+        result: context,
+      };
+    }
+
+    if (request.method === "editor.applyCommand") {
+      if (request.params.command === "replaceRange") {
+        context = {
+          ...context,
+          content: replaceRange(context.content, request.params.range, request.params.text),
+          selection: "",
+          selectionRange: null,
+        };
+      }
+      if (request.params.command === "insertText") {
+        const range = { from: request.params.pos, to: request.params.pos };
+        context = {
+          ...context,
+          content: replaceRange(context.content, range, request.params.text),
+          selection: "",
+          selectionRange: null,
+        };
+      }
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        protocolVersion: "0.1.0",
+        result: context,
+      };
+    }
+
+    return {
+      jsonrpc: "2.0",
+      id: request.id,
+      protocolVersion: "0.1.0",
+      error: {
+        code: "METHOD_NOT_FOUND",
+        message: `Unsupported method: ${request.method}`,
+        data: { correlationId: "mock-corr" },
+      },
+    };
   });
 
-  const runtime = await session.client.readResource({
-    uri: "runtime://status",
-  });
-
-  assert.ok(runtime.contents.length > 0);
-  const payload = JSON.parse(runtime.contents[0].text);
-  assert.ok(["normal", "degraded", "unavailable"].includes(payload.availability));
-  assert.ok(Object.hasOwn(payload, "retryCount"));
-});
-
-test("mcp e2e: review checklist resource and agent review prompt are available", async (t) => {
-  const session = await createMcpClient();
-  t.after(async () => {
-    await session.close();
-  });
-
-  const resources = await session.client.listResources();
-  const resourceUris = resources.resources.map((resource) => resource.uri);
-  assert.ok(resourceUris.includes("review://checklist"));
-
-  const checklist = await session.client.readResource({
-    uri: "review://checklist",
-  });
-  const checklistPayload = JSON.parse(checklist.contents[0].text);
-  assert.ok(Array.isArray(checklistPayload.checklist));
-  assert.ok(checklistPayload.checklist.length >= 4);
-
-  const prompts = await session.client.listPrompts();
-  const promptNames = prompts.prompts.map((prompt) => prompt.name);
-  assert.ok(promptNames.includes("workflow_agent_runtime_review"));
-
-  const loadedPrompt = await session.client.getPrompt({
-    name: "workflow_agent_runtime_review",
-    arguments: {
-      scope: "mcp tool surface",
-      severityThreshold: "medium",
+  const session = await createMcpClient({
+    envOverrides: {
+      OBSIDIAN_PLUGIN_PORT: String(plugin.port),
     },
   });
-  assert.ok(loadedPrompt.messages.length > 0);
-  assert.ok(loadedPrompt.messages[0].content.type === "text");
-  assert.ok(loadedPrompt.messages[0].content.text.includes("Tool contract quality"));
-});
-
-test("mcp e2e: delete_note returns NOT_FOUND for missing note", async (t) => {
-  const session = await createMcpClient();
   t.after(async () => {
     await session.close();
+    await plugin.close();
   });
 
-  const result = await session.client.callTool({
-    name: "delete_note",
-    arguments: { path: "e2e/does-not-exist.md" },
-  });
-
-  assert.equal(result.isError, true);
-  assert.equal(result.structuredContent.code, "NOT_FOUND");
-  assert.ok(typeof result.structuredContent.message === "string");
-  const errorPayload = JSON.parse(result.content[0].text);
-  assert.equal(errorPayload.isError, true);
-  assert.equal(errorPayload.code, "NOT_FOUND");
-});
-
-test("mcp e2e: get_note returns structured NOT_FOUND error", async (t) => {
-  const session = await createMcpClient();
-  t.after(async () => {
-    await session.close();
-  });
-
-  const result = await session.client.callTool({
-    name: "get_note",
-    arguments: { path: "e2e/missing-note.md" },
-  });
-
-  assert.equal(result.isError, true);
-  assert.equal(result.structuredContent.code, "NOT_FOUND");
-  assert.ok(typeof result.structuredContent.message === "string");
-  const errorPayload = JSON.parse(result.content[0].text);
-  assert.equal(errorPayload.code, "NOT_FOUND");
-  assert.equal(errorPayload.isError, true);
-});
-
-test("mcp e2e: insert_at_cursor returns structured validation error", async (t) => {
-  const session = await createMcpClient();
-  t.after(async () => {
-    await session.close();
-  });
-
-  const result = await session.client.callTool({
-    name: "insert_at_cursor",
-    arguments: {
-      text: "x",
-      position: { line: 9999, ch: 9999 },
-    },
-  });
-
-  assert.equal(result.isError, true);
-  assert.equal(result.structuredContent.code, "VALIDATION");
-  assert.ok(typeof result.structuredContent.message === "string");
-  const errorPayload = JSON.parse(result.content[0].text);
-  assert.equal(errorPayload.code, "VALIDATION");
-  assert.equal(errorPayload.isError, true);
-});
-
-test("mcp e2e: active context fields are semantically plausible", async (t) => {
-  const session = await createMcpClient();
-  t.after(async () => {
-    await session.close();
-  });
-
-  const result = await session.client.callTool({
-    name: "get_active_context",
+  const active = await session.client.callTool({
+    name: "read_active_context",
     arguments: {},
   });
+  assert.ok(!active.isError);
+  assert.equal(active.structuredContent.activeFile, "e2e/active.md");
+  assert.equal(active.structuredContent.selection, "beta");
+  assert.ok(active.structuredContent.editTargets.selection);
 
-  assert.ok(!result.isError);
-  assert.ok(typeof result.structuredContent.noActiveEditor === "boolean");
-  assert.ok(typeof result.structuredContent.degraded === "boolean");
-  assert.ok(typeof result.structuredContent.editorState === "string");
-  assert.ok(typeof result.structuredContent.selection === "string");
-  assert.ok(typeof result.structuredContent.content === "string");
+  const replacedSelection = await session.client.callTool({
+    name: "edit_note",
+    arguments: {
+      target: active.structuredContent.editTargets.selection,
+      change: {
+        type: "replaceTarget",
+        content: "BETA",
+      },
+    },
+  });
+  assert.ok(!replacedSelection.isError);
+  assert.equal(replacedSelection.structuredContent.status, "applied");
 
-  if (result.structuredContent.noActiveEditor === false) {
-    const content =
-      typeof result.structuredContent.content === "string" ? result.structuredContent.content : "";
-    const cursor = result.structuredContent.cursor;
+  const refreshed = await session.client.callTool({
+    name: "read_active_context",
+    arguments: {},
+  });
+  assert.ok(!refreshed.isError);
+  assert.equal(refreshed.structuredContent.content, "alpha BETA gamma");
 
-    if (cursor) {
-      const lineCount = content.length === 0 ? 1 : content.split("\n").length;
-      assert.ok(cursor.line >= 0);
-      assert.ok(cursor.ch >= 0);
-      assert.ok(cursor.line < lineCount);
-    }
-    assert.equal(result.structuredContent.editorState, "active");
-  } else {
-    assert.equal(result.structuredContent.editorState, "none");
-  }
+  const inserted = await session.client.callTool({
+    name: "edit_note",
+    arguments: {
+      target: refreshed.structuredContent.editTargets.cursor,
+      change: {
+        type: "replaceTarget",
+        content: "!",
+      },
+    },
+  });
+  assert.ok(!inserted.isError);
+  assert.equal(inserted.structuredContent.status, "applied");
 });

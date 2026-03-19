@@ -6,6 +6,8 @@ import { DomainError } from "../domain/errors";
 type NoteRecord = {
   content: string;
   metadata: Record<string, unknown>;
+  updatedAt: number;
+  size: number;
 };
 
 export type ListedEntry = {
@@ -76,10 +78,13 @@ export function readNote(path: string): NoteRecord | undefined {
     return undefined;
   }
 
+  const stats = fs.statSync(filePath);
   const content = fs.readFileSync(filePath, "utf8");
   return {
     content,
     metadata: parseFrontmatter(content),
+    updatedAt: stats.mtimeMs,
+    size: stats.size,
   };
 }
 
@@ -87,26 +92,50 @@ export function writeNote(path: string, content: string): NoteRecord {
   const filePath = resolveVaultPath(path);
   const existing = readNote(path);
   const metadata = hasFrontmatter(content) ? parseFrontmatter(content) : (existing?.metadata ?? {});
-  const next = {
-    content: hasFrontmatter(content) ? content : applyFrontmatter(content, metadata),
-    metadata,
-  };
+  const nextContent = hasFrontmatter(content) ? content : applyFrontmatter(content, metadata);
   ensureParentDir(filePath);
-  fs.writeFileSync(filePath, next.content, "utf8");
-  return next;
+  fs.writeFileSync(filePath, nextContent, "utf8");
+  const stats = fs.statSync(filePath);
+  return {
+    content: nextContent,
+    metadata,
+    updatedAt: stats.mtimeMs,
+    size: stats.size,
+  };
 }
 
 export function updateMetadata(path: string, metadata: Record<string, unknown>): NoteRecord {
   const filePath = resolveVaultPath(path);
-  const existing = readNote(path) ?? { content: "", metadata: {} };
+  const existing = readNote(path) ?? { content: "", metadata: {}, updatedAt: Date.now(), size: 0 };
   const mergedMetadata = { ...existing.metadata, ...metadata };
-  const next = {
-    content: applyFrontmatter(existing.content, mergedMetadata),
-    metadata: mergedMetadata,
-  };
+  const nextContent = applyFrontmatter(existing.content, mergedMetadata);
   ensureParentDir(filePath);
-  fs.writeFileSync(filePath, next.content, "utf8");
-  return next;
+  fs.writeFileSync(filePath, nextContent, "utf8");
+  const stats = fs.statSync(filePath);
+  return {
+    content: nextContent,
+    metadata: mergedMetadata,
+    updatedAt: stats.mtimeMs,
+    size: stats.size,
+  };
+}
+
+export function getNoteStat(notePath: string): {
+  updatedAt: number;
+  size: number;
+  absolutePath: string;
+} | null {
+  const filePath = resolveVaultPath(notePath);
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+
+  const stats = fs.statSync(filePath);
+  return {
+    updatedAt: stats.mtimeMs,
+    size: stats.size,
+    absolutePath: filePath,
+  };
 }
 
 export function deleteNote(path: string): boolean {

@@ -7,6 +7,7 @@ export interface EditorContext {
   activeFile: string | null;
   cursor: { line: number; ch: number } | null;
   selection: string;
+  selectionRange: { from: { line: number; ch: number }; to: { line: number; ch: number } } | null;
   content: string;
 }
 
@@ -24,6 +25,7 @@ export class EditorService {
     activeFile: null,
     cursor: null,
     selection: "",
+    selectionRange: null,
     content: "",
   };
 

@@ -26,8 +26,8 @@ export function registerContextRewritePrompt(server: McpServer): void {
             content: {
               type: "text",
               text: [
-                `Use ${TOOL_NAMES.GET_ACTIVE_CONTEXT} to retrieve current selection and surrounding context.`,
-                "Rewrite only selected text and avoid side effects.",
+                `Use ${TOOL_NAMES.READ_ACTIVE_CONTEXT} to retrieve current selection and surrounding context.`,
+                `Pass the returned selection edit target into ${TOOL_NAMES.EDIT_NOTE} and rewrite only that text.`,
                 `Preferred style: ${style}.`,
               ].join("\n"),
             },

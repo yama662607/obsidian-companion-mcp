@@ -3,8 +3,13 @@ import path from "node:path";
 import { logError, logInfo } from "./logger";
 
 type IndexedNote = {
+  id: string;
   path: string;
-  snippet: string;
+  title: string;
+  text: string;
+  startLine: number;
+  endLine: number;
+  headingPath: string[] | null;
   updatedAt: number;
   embedding: number[];
 };
@@ -48,7 +53,7 @@ export class VectorStore {
 
       const raw = await fs.readFile(this.indexPath, "utf-8");
       const data = JSON.parse(raw) as Array<[string, IndexedNote]>;
-      logInfo(`vector index loaded: ${data.length} notes from ${this.indexPath}`);
+      logInfo(`vector index loaded: ${data.length} entries from ${this.indexPath}`);
       return new Map(data);
     } catch (error) {
       logError(`failed to load vector index: ${String(error)}`);
@@ -64,7 +69,7 @@ export class VectorStore {
 
       const data = Array.from(notes.entries());
       await fs.writeFile(this.indexPath, JSON.stringify(data), "utf-8");
-      logInfo(`vector index saved: ${notes.size} notes to ${this.indexPath}`);
+      logInfo(`vector index saved: ${notes.size} entries to ${this.indexPath}`);
     } catch (error) {
       logError(`failed to save vector index: ${String(error)}`);
     }

@@ -21,6 +21,7 @@ export function registerActiveEditorContextResource(
           typeof result.context.activeFile === "string" ? result.context.activeFile : null,
         cursor: result.context.cursor ?? null,
         selection: typeof result.context.selection === "string" ? result.context.selection : "",
+        selectionRange: result.context.selectionRange ?? null,
         content: typeof result.context.content === "string" ? result.context.content : "",
       };
 

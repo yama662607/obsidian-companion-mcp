@@ -1,18 +1,27 @@
-type IndexedNote = {
+import { createEmbeddingProvider, type EmbeddingProvider } from "./embeddingProvider";
+import { IndexingQueue } from "./indexingQueue";
+import { buildSemanticChunks, readTitleFromPath } from "./noteDocument";
+
+type IndexedChunk = {
+  id: string;
   path: string;
-  snippet: string;
+  title: string;
+  text: string;
+  startLine: number;
+  endLine: number;
+  headingPath: string[] | null;
   updatedAt: number;
   embedding: number[];
 };
 
-import { createEmbeddingProvider, type EmbeddingProvider } from "./embeddingProvider";
-import { IndexingQueue } from "./indexingQueue";
+type ChunkSearchOptions = {
+  topK: number;
+  maxPerNote: number;
+  minScore?: number;
+  pathPrefix?: string;
+  notePaths?: string[];
+};
 
-/**
- * Calculates cosine similarity between two vectors.
- * Since vectors from our provider are already normalized (length = 1),
- * cosine similarity is equal to the dot product.
- */
 function cosineSimilarity(a: number[], b: number[]): number {
   let dotProduct = 0;
   const len = Math.min(a.length, b.length);
@@ -22,69 +31,108 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dotProduct;
 }
 
-function toExcerpt(content: string, maxLength = 240): string {
-  const normalized = content.replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxLength) {
-    return normalized;
-  }
-  return `${normalized.slice(0, Math.max(maxLength - 3, 0))}...`;
-}
-
 export class SemanticService {
-  private notes = new Map<string, IndexedNote>();
-  private queue = new IndexingQueue();
+  private chunks = new Map<string, IndexedChunk>();
+  private chunkIdsByPath = new Map<string, string[]>();
   private provider: EmbeddingProvider;
+  private queue = new IndexingQueue();
 
   constructor(preferRemote = false, vaultPath = "", configDir = "") {
     this.provider = createEmbeddingProvider(preferRemote, vaultPath, configDir);
   }
 
-  queueIndex(path: string, snippet: string, updatedAt: number): boolean {
-    return this.queue.enqueue({ path, content: snippet, updatedAt });
+  private replaceNoteChunks(path: string, nextChunks: IndexedChunk[]): void {
+    const previousChunkIds = this.chunkIdsByPath.get(path) ?? [];
+    for (const chunkId of previousChunkIds) {
+      this.chunks.delete(chunkId);
+    }
+
+    this.chunkIdsByPath.set(
+      path,
+      nextChunks.map((chunk) => chunk.id),
+    );
+    for (const chunk of nextChunks) {
+      this.chunks.set(chunk.id, chunk);
+    }
+  }
+
+  upsert(path: string, content: string, updatedAt: number): boolean {
+    const existingChunkIds = this.chunkIdsByPath.get(path);
+    const existingUpdatedAt =
+      existingChunkIds && existingChunkIds.length > 0
+        ? (this.chunks.get(existingChunkIds[0])?.updatedAt ?? 0)
+        : 0;
+    if (existingUpdatedAt >= updatedAt) {
+      return false;
+    }
+
+    return this.queue.enqueue({ path, content, updatedAt });
   }
 
   flushIndex(maxItems = 25): Promise<number> {
     return this.queue.process(async (job) => {
-      // Document embeddings use "passage: " prefix
-      const embedding = await this.provider.embed(job.content, false);
-      this.notes.set(job.path, {
-        path: job.path,
-        snippet: toExcerpt(job.content),
-        updatedAt: job.updatedAt,
-        embedding,
-      });
+      const chunks = buildSemanticChunks(job.path, job.content);
+      const nextChunks: IndexedChunk[] = [];
+
+      for (const chunk of chunks) {
+        const embedding = await this.provider.embed(chunk.text, false);
+        nextChunks.push({
+          id: chunk.id,
+          path: chunk.path,
+          title: readTitleFromPath(chunk.path),
+          text: chunk.text,
+          startLine: chunk.startLine,
+          endLine: chunk.endLine,
+          headingPath: chunk.headingPath,
+          updatedAt: job.updatedAt,
+          embedding,
+        });
+      }
+
+      this.replaceNoteChunks(job.path, nextChunks);
     }, maxItems);
   }
 
-  upsert(path: string, snippet: string, updatedAt: number): boolean {
-    const existing = this.notes.get(path);
-    if (existing && existing.updatedAt >= updatedAt) {
-      return false;
-    }
-
-    return this.queueIndex(path, snippet, updatedAt);
-  }
-
   remove(path: string): void {
-    this.notes.delete(path);
+    const existingChunkIds = this.chunkIdsByPath.get(path) ?? [];
+    for (const chunkId of existingChunkIds) {
+      this.chunks.delete(chunkId);
+    }
+    this.chunkIdsByPath.delete(path);
     this.queue.removePath(path);
   }
 
   movePath(from: string, to: string): void {
-    const existing = this.notes.get(from);
-    if (existing) {
-      this.notes.delete(from);
-      this.notes.set(to, {
-        ...existing,
+    const existingChunkIds = this.chunkIdsByPath.get(from) ?? [];
+    if (existingChunkIds.length === 0) {
+      this.queue.renamePath(from, to);
+      return;
+    }
+
+    const movedChunks: IndexedChunk[] = [];
+    for (const chunkId of existingChunkIds) {
+      const chunk = this.chunks.get(chunkId);
+      if (!chunk) {
+        continue;
+      }
+      this.chunks.delete(chunkId);
+      movedChunks.push({
+        ...chunk,
+        id: `${to}:${chunk.startLine}-${chunk.endLine}`,
         path: to,
+        title: readTitleFromPath(to),
       });
     }
+
+    this.chunkIdsByPath.delete(from);
+    this.replaceNoteChunks(to, movedChunks);
     this.queue.renamePath(from, to);
   }
 
   getIndexStatus(sampleLimit = 20): {
     pendingCount: number;
-    indexedCount: number;
+    indexedNoteCount: number;
+    indexedChunkCount: number;
     running: boolean;
     ready: boolean;
     isEmpty: boolean;
@@ -92,15 +140,13 @@ export class SemanticService {
     pendingSample: string[];
   } {
     const pendingCount = this.queue.getPendingCount();
-    const indexedCount = this.notes.size;
-    // In this context, modelReady means the provider can embed (local files exist or remote is active)
-    // We can't easily make getIndexStatus async, so we'll rely on an internal flag or just let it be handled in search
     return {
       pendingCount,
-      indexedCount,
+      indexedNoteCount: this.chunkIdsByPath.size,
+      indexedChunkCount: this.chunks.size,
       running: this.queue.isRunning(),
       ready: pendingCount === 0,
-      isEmpty: indexedCount === 0,
+      isEmpty: this.chunks.size === 0,
       modelReady: this.provider.getRuntimeState().modelReady,
       pendingSample: this.queue.getPendingSample(sampleLimit),
     };
@@ -116,72 +162,127 @@ export class SemanticService {
 
   async searchWithStatus(
     query: string,
-    limit: number,
+    options: ChunkSearchOptions,
   ): Promise<{
-    matches: Array<{ path: string; score: number; excerpt: string }>;
-    indexStatus: {
-      pendingCount: number;
-      indexedCount: number;
-      running: boolean;
-      ready: boolean;
-      isEmpty: boolean;
-      modelReady: boolean;
-      pendingSample: string[];
-    };
+    matches: Array<{
+      id: string;
+      path: string;
+      title: string;
+      score: number;
+      text: string;
+      startLine: number;
+      endLine: number;
+      headingPath: string[] | null;
+      updatedAt: number;
+    }>;
+    indexStatus: ReturnType<SemanticService["getIndexStatus"]>;
   }> {
-    // Only flush if we have something to flush and we don't want to trigger auto-download here
-    // But if the user explicitly calls search, they might expect some auto-indexing of pending items.
-    // However, the user wants to separate "heavy" indexing.
     if (this.queue.getPendingCount() > 0) {
-      await this.flushIndex(Math.max(limit * 2, 10));
+      await this.flushIndex(Math.max(options.topK * 2, 10));
     }
 
-    const matches = await this.search(query, limit);
     return {
-      matches,
+      matches: await this.search(query, options),
       indexStatus: this.getIndexStatus(),
     };
   }
 
-  /**
-   * ACTUAL SEMANTIC SEARCH IMPLEMENTATION:
-   * 1. Embed query with "query: " prefix.
-   * 2. Calculate cosine similarity against all indexed notes.
-   * 3. Sort by score and return top results.
-   */
   async search(
     query: string,
-    limit: number,
-  ): Promise<Array<{ path: string; score: number; excerpt: string }>> {
-    if (this.notes.size === 0) return [];
+    options: ChunkSearchOptions,
+  ): Promise<
+    Array<{
+      id: string;
+      path: string;
+      title: string;
+      score: number;
+      text: string;
+      startLine: number;
+      endLine: number;
+      headingPath: string[] | null;
+      updatedAt: number;
+    }>
+  > {
+    if (this.chunks.size === 0) {
+      return [];
+    }
 
-    // Query embedding uses "query: " prefix
     const queryVector = await this.provider.embed(query, true);
+    const allowedPaths = options.notePaths ? new Set(options.notePaths) : null;
+    const perNoteCount = new Map<string, number>();
 
-    return Array.from(this.notes.values())
-      .map((note) => {
-        const score = cosineSimilarity(queryVector, note.embedding);
-        return {
-          path: note.path,
-          excerpt: toExcerpt(note.snippet),
-          score,
-        };
+    return Array.from(this.chunks.values())
+      .filter((chunk) => {
+        if (options.pathPrefix && !chunk.path.startsWith(options.pathPrefix)) {
+          return false;
+        }
+        if (allowedPaths && !allowedPaths.has(chunk.path)) {
+          return false;
+        }
+        return true;
       })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
+      .map((chunk) => ({
+        ...chunk,
+        score: cosineSimilarity(queryVector, chunk.embedding),
+      }))
+      .filter((chunk) => (options.minScore === undefined ? true : chunk.score >= options.minScore))
+      .sort((left, right) => right.score - left.score)
+      .filter((chunk) => {
+        const current = perNoteCount.get(chunk.path) ?? 0;
+        if (current >= options.maxPerNote) {
+          return false;
+        }
+        perNoteCount.set(chunk.path, current + 1);
+        return true;
+      })
+      .slice(0, options.topK);
   }
 
   getProvider(): EmbeddingProvider {
     return this.provider;
   }
 
-  // For testing/internal use
-  getNotes(): Map<string, IndexedNote> {
-    return this.notes;
+  getNotes(): Map<string, IndexedChunk> {
+    return this.chunks;
   }
 
-  // Replace entire index (useful for loading from storage)
-  setNotes(notes: Map<string, IndexedNote>): void {
-    this.notes = notes;
+  setNotes(
+    notes: Map<
+      string,
+      | IndexedChunk
+      | {
+          path: string;
+          snippet: string;
+          updatedAt: number;
+          embedding: number[];
+        }
+    >,
+  ): void {
+    this.chunks = new Map();
+    this.chunkIdsByPath = new Map();
+
+    for (const [id, value] of notes.entries()) {
+      if ("startLine" in value && "endLine" in value && "text" in value) {
+        this.chunks.set(id, value);
+        const chunkIds = this.chunkIdsByPath.get(value.path) ?? [];
+        chunkIds.push(id);
+        this.chunkIdsByPath.set(value.path, chunkIds);
+        continue;
+      }
+
+      const chunkId = `${value.path}:0-0`;
+      this.chunks.set(chunkId, {
+        id: chunkId,
+        path: value.path,
+        title: readTitleFromPath(value.path),
+        text: value.snippet,
+        startLine: 0,
+        endLine: 0,
+        headingPath: null,
+        updatedAt: value.updatedAt,
+        embedding: value.embedding,
+      });
+      this.chunkIdsByPath.set(value.path, [chunkId]);
+    }
   }
 }

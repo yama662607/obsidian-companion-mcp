@@ -19,9 +19,11 @@ export function registerSchemaSummaryResource(server: McpServer): void {
             {
               policy: {
                 requiresZodObject: true,
+                requiresOutputSchema: true,
                 requiresEnumForFiniteValues: true,
                 requiresBoundedLimit: true,
                 disallowAny: true,
+                prefersReadToEditHandoff: true,
               },
             },
             null,

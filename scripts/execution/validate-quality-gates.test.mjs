@@ -11,7 +11,7 @@ import {
 test("extractToolRegistrations finds tool metadata blocks", () => {
   const source = `
 server.registerTool(
-  "search_notes_semantic",
+  "semantic_search_notes",
   {
     annotations: {
       readOnlyHint: true,
@@ -20,6 +20,7 @@ server.registerTool(
       query: z.string(),
       limit: z.number().min(1).max(20).default(10),
     }),
+    outputSchema: SemanticSearchOutputSchema,
   },
   async () => ({ content: [{ type: "text", text: "ok" }] })
 );
@@ -27,11 +28,11 @@ server.registerTool(
 
   const tools = extractToolRegistrations(source);
   assert.equal(tools.length, 1);
-  assert.equal(tools[0].name, "search_notes_semantic");
+  assert.equal(tools[0].name, "semantic_search_notes");
   assert.match(tools[0].optionsBlock, /readOnlyHint: true/);
 });
 
-test("validateSchemaPolicy rejects non-z.object schema and missing bounded limit", () => {
+test("validateSchemaPolicy rejects missing outputSchema and missing bounded limit", () => {
   const badSource = `
 server.registerTool("manage_note", {
   inputSchema: {
@@ -45,13 +46,15 @@ server.registerTool("manage_note", {
 
   assert.equal(result.ok, false);
   assert.ok(result.errors.some((e) => e.includes("must use z.object or a named *InputSchema")));
+  assert.ok(result.errors.some((e) => e.includes("must publish outputSchema")));
   assert.ok(result.errors.some((e) => e.includes("limit must be bounded")));
 });
 
 test("validateAnnotationPolicy enforces readOnlyHint for read tools", () => {
   const badSource = `
-server.registerTool("get_active_context", {
+server.registerTool("read_active_context", {
   inputSchema: z.object({}),
+  outputSchema: ActiveContextOutputSchema,
   annotations: {},
 });
 `;
