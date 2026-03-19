@@ -9,6 +9,29 @@ A hybrid Model Context Protocol (MCP) ecosystem for Obsidian, providing vault-wi
 - **Smart Note Management**: Precise CRUD operations for Markdown files and Frontmatter.
 - **Local-First Architecture**: All embeddings and indexing are performed locally on your machine for maximum privacy.
 
+## MCP Workflow
+
+The public MCP surface is organized around the actual agent workflow:
+
+1. Discover candidate notes
+   - `list_notes`
+   - `search_notes`
+   - `semantic_search_notes`
+   - `get_semantic_index_status`
+   - `refresh_semantic_index`
+2. Read persisted notes or the active editor
+   - `read_note`
+   - `read_active_context`
+3. Apply one structured edit tool
+   - `edit_note`
+4. Use lifecycle / metadata tools when needed
+   - `create_note`
+   - `patch_note_metadata`
+   - `move_note`
+   - `delete_note`
+
+`read_note` and `read_active_context` both return machine-readable edit handoff payloads so agents can move from read to edit without reconstructing anchors manually.
+
 ## Getting Started
 
 To use Obsidian Companion MCP, you need to set up both the Obsidian plugin and the MCP server.
