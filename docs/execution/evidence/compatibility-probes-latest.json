@@ -13,6 +13,10 @@
     "legacyPersistedState": {
       "status": "pass",
       "evidence": "scripts/implementation/mcp-runtime.e2e.test.mjs"
+    },
+    "largeActiveEditorBuffer": {
+      "status": "pass",
+      "evidence": "scripts/implementation/mcp-runtime.e2e.test.mjs"
     }
   }
 }

@@ -222,7 +222,12 @@ export function validateCompatibilityEvidence(repoRoot) {
 
   try {
     const parsed = JSON.parse(fs.readFileSync(evidencePath, "utf8"));
-    const requiredProbes = ["textOnlyClient", "jsonStringifiedNestedArgs", "legacyPersistedState"];
+    const requiredProbes = [
+      "textOnlyClient",
+      "jsonStringifiedNestedArgs",
+      "legacyPersistedState",
+      "largeActiveEditorBuffer",
+    ];
     if (parsed.status !== "pass") {
       return { ok: false, errors: ["compatibility probe evidence status must be pass"] };
     }
