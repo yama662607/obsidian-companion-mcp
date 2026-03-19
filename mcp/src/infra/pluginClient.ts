@@ -210,7 +210,9 @@ export class PluginClient {
         },
       );
 
-      httpRequest.on("error", reject);
+      httpRequest.on("error", (error) => {
+        reject(error instanceof Error ? error : new Error("Plugin request failed"));
+      });
       httpRequest.write(payload);
       httpRequest.end();
     });

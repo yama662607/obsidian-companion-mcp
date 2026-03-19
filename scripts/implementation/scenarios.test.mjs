@@ -65,6 +65,24 @@ test("active editor read path exposes selectionRange for follow-up edits", () =>
   assert.match(resourceSource, /selectionRange/);
 });
 
+test("plugin transport and settings UI preserve review-bot compatibility guards", () => {
+  const pluginSource = read("plugin/src/main.ts");
+  const pluginClientSource = read("mcp/src/infra/pluginClient.ts");
+
+  assert.match(pluginSource, /interface LocalServerHandle/);
+  assert.doesNotMatch(pluginSource, /\bany\b/);
+  assert.doesNotMatch(pluginSource, /http\.Server/);
+  assert.doesNotMatch(pluginSource, /console\.(log|info)\(/);
+  assert.match(pluginSource, /setName\("Server"\)\.setHeading\(\)/);
+  assert.doesNotMatch(pluginSource, /setName\(".*settings/i);
+  assert.doesNotMatch(pluginSource, /setName\("Companion MCP/i);
+  assert.match(pluginClientSource, /reject\(new Error\(`HTTP error! status:/);
+  assert.match(
+    pluginClientSource,
+    /httpRequest\.on\("error", \(error\) => \{\s*reject\(error instanceof Error \? error : new Error\("Plugin request failed"\)\);/s,
+  );
+});
+
 test("note document helpers resolve anchors, revisions, and exact replacement", () => {
   const source = read("mcp/src/domain/noteDocument.ts");
 
