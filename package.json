@@ -1,0 +1,9 @@
+{
+  "name": "obsidian-companion-mcp-workspace",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Workspace tooling for Obsidian Companion MCP",
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.8"
+  }
+}

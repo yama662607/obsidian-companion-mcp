@@ -9,7 +9,7 @@ set shell := ["bash", "-c"]
 # Package manager (npm/pnpm/bun)
 
 pm := "npm"
-biome := "npx -y @biomejs/biome@2.4.7"
+biome := "./node_modules/.bin/biome"
 biome_targets := "biome.json mcp/src plugin/src shared scripts/execution scripts/implementation plugin/esbuild.config.mjs mcp/tsconfig.json plugin/tsconfig.json"
 
 # Subprojects
@@ -54,25 +54,34 @@ test *args="":
 # =============================================================================
 # --- Format ---
 
+# Ensure biome is available locally before running offline quality gates
+ensure-biome:
+    @if [ ! -x "{{ biome }}" ]; then \
+        echo "Error: Biome is not installed in the workspace."; \
+        echo "Install root tooling once with:"; \
+        echo "  npm install"; \
+        exit 1; \
+    fi
+
 # Check formatting
-fmt-check:
+fmt-check: ensure-biome
     @echo "Checking formatting..."
     @{{ biome }} check --formatter-enabled=true --linter-enabled=false {{ biome_targets }}
 
 # Format code
-fmt:
+fmt: ensure-biome
     @echo "Formatting code..."
     @{{ biome }} format --write {{ biome_targets }}
 
 # --- Lint ---
 
 # Lint code
-lint:
+lint: ensure-biome
     @echo "Linting..."
     @{{ biome }} check --formatter-enabled=false --linter-enabled=true {{ biome_targets }}
 
 # Fix lint errors
-lint-fix:
+lint-fix: ensure-biome
     @echo "Fixing lint errors..."
     @{{ biome }} check --write --unsafe --formatter-enabled=false --linter-enabled=true {{ biome_targets }}
 

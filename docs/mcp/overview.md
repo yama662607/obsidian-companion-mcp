@@ -57,3 +57,25 @@ active editor:
 - edit は `edit_note` 1 つに統合
 - metadata patch は content edit と分離
 - destructive / read-only annotation は tool intent に正しく合わせる
+
+## Error Semantics
+
+public tools は domain error code を一貫して使います。
+
+- `VALIDATION`
+  - 入力が schema または vault safety rule に違反している
+  - 例: path escape, invalid cursor, unsupported anchor
+- `NOT_FOUND`
+  - 対象 note / heading / block / text が存在しない
+  - fallback 成功とは混同しない
+- `CONFLICT`
+  - revision や target text が現在状態と一致しない
+  - 例: stale revision, destination already exists, ambiguous occurrence
+- `UNAVAILABLE`
+  - 対象リソースや runtime が一時的に利用できない
+  - 例: no active editor, plugin communication failure, vault path 未設定
+  - `NOT_FOUND` とは別で、リソース不在ではなく現在利用不能を表す
+- `INTERNAL`
+  - 予期しない内部エラー
+
+degraded fallback が成功した場合は error を返さず、payload に `degraded=true` と具体的な `degradedReason` を含めます。

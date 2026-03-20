@@ -27,6 +27,7 @@ plugin/main.js
 
 # Tool caches
 .cache/
+.npm-cache/
 .eslintcache
 .agents/
 

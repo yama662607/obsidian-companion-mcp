@@ -118,7 +118,19 @@ async function startMockPluginServer(responseFactory) {
     res.end(JSON.stringify(response));
   });
 
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolve, reject) => {
+    const onError = (error) => {
+      server.off("listening", onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      server.off("error", onError);
+      resolve(undefined);
+    };
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(0, "127.0.0.1");
+  });
   const address = server.address();
   if (!address || typeof address === "string") {
     throw new Error("Failed to determine mock plugin server port");
