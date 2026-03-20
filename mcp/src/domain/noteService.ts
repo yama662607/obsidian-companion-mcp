@@ -83,7 +83,7 @@ export class NoteService {
     try {
       await this.pluginClient.send("notes.write", { path, content });
       const record = fallback.writeNote(path, content);
-      this.semanticService?.upsert(path, record.content, Date.now());
+      this.semanticService?.upsert(path, record.content, record.updatedAt, record.size);
       return {
         path,
         updatedAt: record.updatedAt,
@@ -93,7 +93,7 @@ export class NoteService {
       };
     } catch (error) {
       const record = fallback.writeNote(path, content);
-      this.semanticService?.upsert(path, record.content, Date.now());
+      this.semanticService?.upsert(path, record.content, record.updatedAt, record.size);
       return {
         path,
         updatedAt: record.updatedAt,
@@ -151,7 +151,7 @@ export class NoteService {
     try {
       await this.pluginClient.send("metadata.update", { path, metadata: mergedMetadata });
       const record = fallback.updateMetadata(path, mergedMetadata);
-      this.semanticService?.upsert(path, record.content, Date.now());
+      this.semanticService?.upsert(path, record.content, record.updatedAt, record.size);
       return {
         path,
         metadata: record.metadata,
@@ -162,7 +162,7 @@ export class NoteService {
       };
     } catch (error) {
       const record = fallback.updateMetadata(path, mergedMetadata);
-      this.semanticService?.upsert(path, record.content, Date.now());
+      this.semanticService?.upsert(path, record.content, record.updatedAt, record.size);
       return {
         path,
         metadata: record.metadata,
@@ -235,6 +235,11 @@ export class NoteService {
     isEmpty: boolean;
     modelReady: boolean;
     pendingSample: string[];
+    scannedCount: number;
+    skippedCount: number;
+    queuedCount: number;
+    flushedCount: number;
+    removedCount: number;
   } {
     if (!this.semanticService) {
       return {
@@ -246,6 +251,11 @@ export class NoteService {
         isEmpty: true,
         modelReady: false,
         pendingSample: [],
+        scannedCount: 0,
+        skippedCount: 0,
+        queuedCount: 0,
+        flushedCount: 0,
+        removedCount: 0,
       };
     }
 
@@ -254,8 +264,11 @@ export class NoteService {
 
   async refreshIndex(): Promise<{
     totalFound: number;
+    scannedCount: number;
+    skippedCount: number;
     queuedCount: number;
     flushedCount: number;
+    removedCount: number;
     pendingCount: number;
     indexedNoteCount: number;
     indexedChunkCount: number;
@@ -264,8 +277,11 @@ export class NoteService {
     if (!this.semanticService) {
       return {
         totalFound: 0,
+        scannedCount: 0,
+        skippedCount: 0,
         queuedCount: 0,
         flushedCount: 0,
+        removedCount: 0,
         pendingCount: 0,
         indexedNoteCount: 0,
         indexedChunkCount: 0,
@@ -276,14 +292,35 @@ export class NoteService {
     // 1. Ensure model is ready (this might download models if missing)
     await this.semanticService.prepareModel();
 
-    // 2. Queue all notes for indexing
-    const notes = fallback.listNotes();
+    // 2. Reconcile current vault metadata before opening note bodies
+    const notes = fallback.listNoteStats();
+    const currentPaths = new Set(notes.map((note) => note.path));
+    const removedCount = this.semanticService.removeMissingPaths(currentPaths);
+    let skippedCount = 0;
     let queuedCount = 0;
 
     for (const note of notes) {
-      const wasUpdated = this.semanticService.upsert(note.path, note.content, note.updatedAt);
+      const existing = this.semanticService.getNoteState(note.path);
+      if (existing && existing.updatedAt >= note.updatedAt && existing.size === note.size) {
+        skippedCount += 1;
+        continue;
+      }
+
+      const record = fallback.readNote(note.path);
+      if (!record) {
+        continue;
+      }
+
+      const wasUpdated = this.semanticService.upsert(
+        note.path,
+        record.content,
+        note.updatedAt,
+        note.size,
+      );
       if (wasUpdated) {
         queuedCount++;
+      } else {
+        skippedCount += 1;
       }
     }
 
@@ -296,12 +333,22 @@ export class NoteService {
         break;
       }
     }
+    this.semanticService.recordRefreshStats({
+      scannedCount: notes.length,
+      skippedCount,
+      queuedCount,
+      flushedCount,
+      removedCount,
+    });
     const indexStatus = this.semanticService.getIndexStatus();
 
     return {
       totalFound: notes.length,
+      scannedCount: notes.length,
+      skippedCount,
       queuedCount,
       flushedCount,
+      removedCount,
       pendingCount: indexStatus.pendingCount,
       indexedNoteCount: indexStatus.indexedNoteCount,
       indexedChunkCount: indexStatus.indexedChunkCount,

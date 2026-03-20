@@ -1,17 +1,12 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type { IndexedChunk, IndexedNoteState, SemanticSnapshot } from "../domain/semanticService";
 import { logError, logInfo } from "./logger";
 
-type IndexedNote = {
-  id: string;
-  path: string;
-  title: string;
-  text: string;
-  startLine: number;
-  endLine: number;
-  headingPath: string[] | null;
-  updatedAt: number;
-  embedding: number[];
+type PersistedSnapshot = {
+  version: 2;
+  chunks: Array<[string, IndexedChunk]>;
+  noteStates: Array<[string, IndexedNoteState]>;
 };
 
 export class VectorStore {
@@ -42,7 +37,7 @@ export class VectorStore {
     );
   }
 
-  async load(): Promise<Map<string, IndexedNote>> {
+  async load(): Promise<SemanticSnapshot | Map<string, IndexedChunk>> {
     try {
       // Check existence asynchronously
       try {
@@ -52,24 +47,40 @@ export class VectorStore {
       }
 
       const raw = await fs.readFile(this.indexPath, "utf-8");
-      const data = JSON.parse(raw) as Array<[string, IndexedNote]>;
-      logInfo(`vector index loaded: ${data.length} entries from ${this.indexPath}`);
-      return new Map(data);
+      const data = JSON.parse(raw) as PersistedSnapshot | Array<[string, IndexedChunk]>;
+      if (Array.isArray(data)) {
+        logInfo(`vector index loaded: ${data.length} chunk entries from ${this.indexPath}`);
+        return new Map(data);
+      }
+
+      logInfo(
+        `vector index loaded: ${data.chunks.length} chunk entries and ${data.noteStates.length} note states from ${this.indexPath}`,
+      );
+      return {
+        chunks: new Map(data.chunks),
+        noteStates: new Map(data.noteStates),
+      };
     } catch (error) {
       logError(`failed to load vector index: ${String(error)}`);
       return new Map();
     }
   }
 
-  async save(notes: Map<string, IndexedNote>): Promise<void> {
+  async save(snapshot: SemanticSnapshot): Promise<void> {
     try {
       const dir = path.dirname(this.indexPath);
       // Create directory asynchronously
       await fs.mkdir(dir, { recursive: true });
 
-      const data = Array.from(notes.entries());
+      const data: PersistedSnapshot = {
+        version: 2,
+        chunks: Array.from(snapshot.chunks.entries()),
+        noteStates: Array.from(snapshot.noteStates.entries()),
+      };
       await fs.writeFile(this.indexPath, JSON.stringify(data), "utf-8");
-      logInfo(`vector index saved: ${notes.size} entries to ${this.indexPath}`);
+      logInfo(
+        `vector index saved: ${snapshot.chunks.size} chunk entries and ${snapshot.noteStates.size} note states to ${this.indexPath}`,
+      );
     } catch (error) {
       logError(`failed to save vector index: ${String(error)}`);
     }

@@ -247,7 +247,7 @@ Find conceptually related note passages using a server-side semantic index.
 semantic index の readiness と pending queue を検索なしで確認する。
 
 **Description**  
-Inspect semantic index readiness, queue depth, and bounded pending samples.
+Inspect semantic index readiness, queue depth, bounded pending samples, and the last reconciliation counters.
 
 **Input**
 
@@ -268,6 +268,11 @@ Inspect semantic index readiness, queue depth, and bounded pending samples.
   "ready": false,
   "isEmpty": false,
   "modelReady": true,
+  "scannedCount": 120,
+  "skippedCount": 84,
+  "queuedCount": 36,
+  "flushedCount": 36,
+  "removedCount": 2,
   "pendingSample": [
     "Projects/Alpha/Retro.md",
     "Daily/2026-03-19.md"
@@ -281,7 +286,7 @@ Inspect semantic index readiness, queue depth, and bounded pending samples.
 semantic index の rebuild / refresh を完了まで実行する。
 
 **Description**  
-Queue semantic indexing work, flush pending items, and report the final queue state.
+Run a metadata-first reconciliation pass, read only changed note bodies, remove stale indexed paths, then flush pending items and report the final queue state.
 
 **Input**
 
@@ -294,8 +299,11 @@ Queue semantic indexing work, flush pending items, and report the final queue st
 ```json
 {
   "totalFound": 120,
+  "scannedCount": 120,
+  "skippedCount": 84,
   "queuedCount": 35,
   "flushedCount": 35,
+  "removedCount": 2,
   "pendingCount": 0,
   "indexedNoteCount": 120,
   "indexedChunkCount": 860,
@@ -306,5 +314,7 @@ Queue semantic indexing work, flush pending items, and report the final queue st
 **Notes**
 
 - heavy tool なので read-only ではないが destructive でもない
+- refresh は vault metadata を先に比較し、変更されたノートだけ本文を読む
+- 外部削除されたノートが index に残っていれば refresh 中に除去される
 - 通常は queue を空にして返す
 - `pendingCount > 0` のまま返る場合は provider/runtime 側の未完了理由を別途確認する

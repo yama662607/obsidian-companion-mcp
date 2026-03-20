@@ -440,6 +440,18 @@ function updateMetadata(path7, metadata) {
     size: stats.size
   };
 }
+function getNoteStat(notePath) {
+  const filePath = resolveVaultPath(notePath);
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+  const stats = fs.statSync(filePath);
+  return {
+    updatedAt: stats.mtimeMs,
+    size: stats.size,
+    absolutePath: filePath
+  };
+}
 function deleteNote(path7) {
   const filePath = resolveVaultPath(path7);
   if (!fs.existsSync(filePath)) {
@@ -564,26 +576,25 @@ function moveNote(fromPath, toPath) {
   fs.renameSync(sourcePath, destinationPath);
   return true;
 }
-function listNotes() {
+function listNoteStats() {
   const vaultRoot = getVaultRoot();
   const results = [];
   function scan(dir) {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
+      if (entry.name.startsWith(".")) {
+        continue;
+      }
       const fullPath = path.join(dir, entry.name);
-      const relativePath = path.relative(vaultRoot, fullPath);
+      const relativePath = path.relative(vaultRoot, fullPath).split(path.sep).join("/");
       if (entry.isDirectory()) {
-        if (entry.name.startsWith(".")) {
-          continue;
-        }
         scan(fullPath);
       } else if (entry.isFile() && entry.name.endsWith(".md")) {
         const stats = fs.statSync(fullPath);
-        const content = fs.readFileSync(fullPath, "utf8");
         results.push({
           path: relativePath,
           updatedAt: stats.mtimeMs,
-          content
+          size: stats.size
         });
       }
     }
@@ -591,7 +602,21 @@ function listNotes() {
   if (fs.existsSync(vaultRoot)) {
     scan(vaultRoot);
   }
+  results.sort((left, right) => left.path.localeCompare(right.path, "en"));
   return results;
+}
+function listNotes() {
+  return listNoteStats().map((entry) => {
+    const note = readNote(entry.path);
+    if (!note) {
+      throw new DomainError("NOT_FOUND", `Note not found: ${entry.path}`);
+    }
+    return {
+      path: entry.path,
+      updatedAt: entry.updatedAt,
+      content: note.content
+    };
+  });
 }
 
 // src/domain/noteService.ts
@@ -654,7 +679,7 @@ var NoteService = class {
     try {
       await this.pluginClient.send("notes.write", { path: path7, content });
       const record = writeNote(path7, content);
-      this.semanticService?.upsert(path7, record.content, Date.now());
+      this.semanticService?.upsert(path7, record.content, record.updatedAt, record.size);
       return {
         path: path7,
         updatedAt: record.updatedAt,
@@ -664,7 +689,7 @@ var NoteService = class {
       };
     } catch (error) {
       const record = writeNote(path7, content);
-      this.semanticService?.upsert(path7, record.content, Date.now());
+      this.semanticService?.upsert(path7, record.content, record.updatedAt, record.size);
       return {
         path: path7,
         updatedAt: record.updatedAt,
@@ -704,7 +729,7 @@ var NoteService = class {
     try {
       await this.pluginClient.send("metadata.update", { path: path7, metadata: mergedMetadata });
       const record = updateMetadata(path7, mergedMetadata);
-      this.semanticService?.upsert(path7, record.content, Date.now());
+      this.semanticService?.upsert(path7, record.content, record.updatedAt, record.size);
       return {
         path: path7,
         metadata: record.metadata,
@@ -715,7 +740,7 @@ var NoteService = class {
       };
     } catch (error) {
       const record = updateMetadata(path7, mergedMetadata);
-      this.semanticService?.upsert(path7, record.content, Date.now());
+      this.semanticService?.upsert(path7, record.content, record.updatedAt, record.size);
       return {
         path: path7,
         metadata: record.metadata,
@@ -766,7 +791,12 @@ var NoteService = class {
         ready: false,
         isEmpty: true,
         modelReady: false,
-        pendingSample: []
+        pendingSample: [],
+        scannedCount: 0,
+        skippedCount: 0,
+        queuedCount: 0,
+        flushedCount: 0,
+        removedCount: 0
       };
     }
     return this.semanticService.getIndexStatus(pendingSampleLimit);
@@ -775,8 +805,11 @@ var NoteService = class {
     if (!this.semanticService) {
       return {
         totalFound: 0,
+        scannedCount: 0,
+        skippedCount: 0,
         queuedCount: 0,
         flushedCount: 0,
+        removedCount: 0,
         pendingCount: 0,
         indexedNoteCount: 0,
         indexedChunkCount: 0,
@@ -784,12 +817,31 @@ var NoteService = class {
       };
     }
     await this.semanticService.prepareModel();
-    const notes = listNotes();
+    const notes = listNoteStats();
+    const currentPaths = new Set(notes.map((note) => note.path));
+    const removedCount = this.semanticService.removeMissingPaths(currentPaths);
+    let skippedCount = 0;
     let queuedCount = 0;
     for (const note of notes) {
-      const wasUpdated = this.semanticService.upsert(note.path, note.content, note.updatedAt);
+      const existing = this.semanticService.getNoteState(note.path);
+      if (existing && existing.updatedAt >= note.updatedAt && existing.size === note.size) {
+        skippedCount += 1;
+        continue;
+      }
+      const record = readNote(note.path);
+      if (!record) {
+        continue;
+      }
+      const wasUpdated = this.semanticService.upsert(
+        note.path,
+        record.content,
+        note.updatedAt,
+        note.size
+      );
       if (wasUpdated) {
         queuedCount++;
+      } else {
+        skippedCount += 1;
       }
     }
     let flushedCount = 0;
@@ -800,11 +852,21 @@ var NoteService = class {
         break;
       }
     }
+    this.semanticService.recordRefreshStats({
+      scannedCount: notes.length,
+      skippedCount,
+      queuedCount,
+      flushedCount,
+      removedCount
+    });
     const indexStatus = this.semanticService.getIndexStatus();
     return {
       totalFound: notes.length,
+      scannedCount: notes.length,
+      skippedCount,
       queuedCount,
       flushedCount,
+      removedCount,
       pendingCount: indexStatus.pendingCount,
       indexedNoteCount: indexStatus.indexedNoteCount,
       indexedChunkCount: indexStatus.indexedChunkCount,
@@ -967,7 +1029,11 @@ var IndexingQueue = class {
   enqueue(job) {
     const existingIndex = this.queue.findIndex((item) => item.path === job.path);
     if (existingIndex !== -1) {
-      if (this.queue[existingIndex].updatedAt >= job.updatedAt) {
+      const existing = this.queue[existingIndex];
+      if (existing.updatedAt > job.updatedAt) {
+        return false;
+      }
+      if (existing.updatedAt === job.updatedAt && existing.size === job.size) {
         return false;
       }
       this.queue.splice(existingIndex, 1);
@@ -1417,34 +1483,75 @@ function cosineSimilarity(a, b) {
   }
   return dotProduct;
 }
+function isSnapshot(value) {
+  return typeof value === "object" && value !== null && "chunks" in value && "noteStates" in value && value.chunks instanceof Map && value.noteStates instanceof Map;
+}
 var SemanticService = class {
   chunks = /* @__PURE__ */ new Map();
   chunkIdsByPath = /* @__PURE__ */ new Map();
+  noteStates = /* @__PURE__ */ new Map();
   provider;
   queue = new IndexingQueue();
+  lastRefreshStats = {
+    scannedCount: 0,
+    skippedCount: 0,
+    queuedCount: 0,
+    flushedCount: 0,
+    removedCount: 0
+  };
   constructor(preferRemote = false, vaultPath = "", configDir = "") {
     this.provider = createEmbeddingProvider(preferRemote, vaultPath, configDir);
   }
-  replaceNoteChunks(path7, nextChunks) {
+  setNoteState(path7, updatedAt, size, chunkIds) {
+    this.chunkIdsByPath.set(path7, chunkIds);
+    this.noteStates.set(path7, {
+      path: path7,
+      updatedAt,
+      size,
+      chunkIds
+    });
+  }
+  replaceNoteChunks(path7, nextChunks, updatedAt, size) {
     const previousChunkIds = this.chunkIdsByPath.get(path7) ?? [];
     for (const chunkId of previousChunkIds) {
       this.chunks.delete(chunkId);
     }
-    this.chunkIdsByPath.set(
-      path7,
-      nextChunks.map((chunk) => chunk.id)
-    );
+    const nextChunkIds = nextChunks.map((chunk) => chunk.id);
     for (const chunk of nextChunks) {
       this.chunks.set(chunk.id, chunk);
     }
+    this.setNoteState(path7, updatedAt, size, nextChunkIds);
   }
-  upsert(path7, content, updatedAt) {
-    const existingChunkIds = this.chunkIdsByPath.get(path7);
-    const existingUpdatedAt = existingChunkIds && existingChunkIds.length > 0 ? this.chunks.get(existingChunkIds[0])?.updatedAt ?? 0 : 0;
-    if (existingUpdatedAt >= updatedAt) {
+  rebuildChunkIds() {
+    this.chunkIdsByPath = /* @__PURE__ */ new Map();
+    for (const [id, chunk] of this.chunks.entries()) {
+      const chunkIds = this.chunkIdsByPath.get(chunk.path) ?? [];
+      chunkIds.push(id);
+      this.chunkIdsByPath.set(chunk.path, chunkIds);
+    }
+  }
+  seedNoteStateFromChunks(path7) {
+    if (this.noteStates.has(path7)) {
+      return;
+    }
+    const chunkIds = this.chunkIdsByPath.get(path7) ?? [];
+    const firstChunk = chunkIds.length > 0 ? this.chunks.get(chunkIds[0]) : void 0;
+    if (!firstChunk) {
+      return;
+    }
+    const stat = getNoteStat(path7);
+    const derivedSize = stat?.size ?? Buffer.byteLength(
+      chunkIds.map((chunkId) => this.chunks.get(chunkId)?.text ?? "").filter((text) => text.length > 0).join("\n"),
+      "utf8"
+    );
+    this.setNoteState(path7, firstChunk.updatedAt, derivedSize, chunkIds);
+  }
+  upsert(path7, content, updatedAt, size) {
+    const existing = this.noteStates.get(path7);
+    if (existing && existing.updatedAt >= updatedAt && existing.size === size) {
       return false;
     }
-    return this.queue.enqueue({ path: path7, content, updatedAt });
+    return this.queue.enqueue({ path: path7, content, updatedAt, size });
   }
   flushIndex(maxItems = 25) {
     return this.queue.process(async (job) => {
@@ -1464,20 +1571,37 @@ var SemanticService = class {
           embedding
         });
       }
-      this.replaceNoteChunks(job.path, nextChunks);
+      this.replaceNoteChunks(job.path, nextChunks, job.updatedAt, job.size);
     }, maxItems);
   }
   remove(path7) {
-    const existingChunkIds = this.chunkIdsByPath.get(path7) ?? [];
+    const existingChunkIds = this.noteStates.get(path7)?.chunkIds ?? this.chunkIdsByPath.get(path7) ?? [];
     for (const chunkId of existingChunkIds) {
       this.chunks.delete(chunkId);
     }
     this.chunkIdsByPath.delete(path7);
+    this.noteStates.delete(path7);
     this.queue.removePath(path7);
   }
+  removeMissingPaths(existingPaths) {
+    let removedCount = 0;
+    for (const path7 of Array.from(this.noteStates.keys())) {
+      if (existingPaths.has(path7)) {
+        continue;
+      }
+      this.remove(path7);
+      removedCount += 1;
+    }
+    return removedCount;
+  }
   movePath(from, to) {
-    const existingChunkIds = this.chunkIdsByPath.get(from) ?? [];
+    const existing = this.noteStates.get(from);
+    const existingChunkIds = existing?.chunkIds ?? this.chunkIdsByPath.get(from) ?? [];
     if (existingChunkIds.length === 0) {
+      if (existing) {
+        this.noteStates.delete(from);
+        this.setNoteState(to, existing.updatedAt, existing.size, []);
+      }
       this.queue.renamePath(from, to);
       return;
     }
@@ -1496,21 +1620,40 @@ var SemanticService = class {
       });
     }
     this.chunkIdsByPath.delete(from);
-    this.replaceNoteChunks(to, movedChunks);
+    this.noteStates.delete(from);
+    this.replaceNoteChunks(to, movedChunks, existing?.updatedAt ?? Date.now(), existing?.size ?? 0);
     this.queue.renamePath(from, to);
+  }
+  recordRefreshStats(stats) {
+    this.lastRefreshStats = stats;
+  }
+  getNoteState(path7) {
+    const state = this.noteStates.get(path7);
+    if (!state) {
+      return void 0;
+    }
+    return { ...state, chunkIds: [...state.chunkIds] };
+  }
+  getIndexedPaths() {
+    return Array.from(this.noteStates.keys());
   }
   getIndexStatus(sampleLimit = 20) {
     const pendingCount = this.queue.getPendingCount();
     const modelReady = this.provider.getRuntimeState().modelReady;
     return {
       pendingCount,
-      indexedNoteCount: this.chunkIdsByPath.size,
+      indexedNoteCount: this.noteStates.size,
       indexedChunkCount: this.chunks.size,
       running: this.queue.isRunning(),
       ready: pendingCount === 0 && modelReady,
       isEmpty: this.chunks.size === 0,
       modelReady,
-      pendingSample: this.queue.getPendingSample(sampleLimit)
+      pendingSample: this.queue.getPendingSample(sampleLimit),
+      scannedCount: this.lastRefreshStats.scannedCount,
+      skippedCount: this.lastRefreshStats.skippedCount,
+      queuedCount: this.lastRefreshStats.queuedCount,
+      flushedCount: this.lastRefreshStats.flushedCount,
+      removedCount: this.lastRefreshStats.removedCount
     };
   }
   async prepareModel() {
@@ -1561,10 +1704,37 @@ var SemanticService = class {
   getNotes() {
     return this.chunks;
   }
+  getSnapshot() {
+    return {
+      chunks: new Map(this.chunks),
+      noteStates: new Map(
+        Array.from(this.noteStates.entries()).map(([path7, state]) => [
+          path7,
+          { ...state, chunkIds: [...state.chunkIds] }
+        ])
+      )
+    };
+  }
   setNotes(notes) {
+    this.setSnapshot(notes);
+  }
+  setSnapshot(snapshot) {
     this.chunks = /* @__PURE__ */ new Map();
     this.chunkIdsByPath = /* @__PURE__ */ new Map();
-    for (const [id, value] of notes.entries()) {
+    this.noteStates = /* @__PURE__ */ new Map();
+    if (isSnapshot(snapshot)) {
+      this.chunks = new Map(snapshot.chunks);
+      this.rebuildChunkIds();
+      for (const [path7, state] of snapshot.noteStates.entries()) {
+        const chunkIds = state.chunkIds.filter((chunkId) => this.chunks.has(chunkId));
+        this.setNoteState(path7, state.updatedAt, state.size, chunkIds);
+      }
+      for (const path7 of this.chunkIdsByPath.keys()) {
+        this.seedNoteStateFromChunks(path7);
+      }
+      return;
+    }
+    for (const [id, value] of snapshot.entries()) {
       if ("startLine" in value && "endLine" in value && "text" in value) {
         this.chunks.set(id, value);
         const chunkIds = this.chunkIdsByPath.get(value.path) ?? [];
@@ -1574,7 +1744,7 @@ var SemanticService = class {
       }
       const note = readNote(value.path);
       if (note) {
-        this.upsert(value.path, note.content, note.updatedAt);
+        this.upsert(value.path, note.content, note.updatedAt, note.size);
         continue;
       }
       const chunkId = `${value.path}:0-0`;
@@ -1589,7 +1759,15 @@ var SemanticService = class {
         updatedAt: value.updatedAt,
         embedding: value.embedding
       });
-      this.chunkIdsByPath.set(value.path, [chunkId]);
+      this.setNoteState(
+        value.path,
+        value.updatedAt,
+        Buffer.byteLength(boundSemanticChunkText(value.snippet), "utf8"),
+        [chunkId]
+      );
+    }
+    for (const path7 of this.chunkIdsByPath.keys()) {
+      this.seedNoteStateFromChunks(path7);
     }
   }
 };
@@ -1813,20 +1991,35 @@ var VectorStore = class {
       }
       const raw = await fs4.readFile(this.indexPath, "utf-8");
       const data = JSON.parse(raw);
-      logInfo(`vector index loaded: ${data.length} entries from ${this.indexPath}`);
-      return new Map(data);
+      if (Array.isArray(data)) {
+        logInfo(`vector index loaded: ${data.length} chunk entries from ${this.indexPath}`);
+        return new Map(data);
+      }
+      logInfo(
+        `vector index loaded: ${data.chunks.length} chunk entries and ${data.noteStates.length} note states from ${this.indexPath}`
+      );
+      return {
+        chunks: new Map(data.chunks),
+        noteStates: new Map(data.noteStates)
+      };
     } catch (error) {
       logError(`failed to load vector index: ${String(error)}`);
       return /* @__PURE__ */ new Map();
     }
   }
-  async save(notes) {
+  async save(snapshot) {
     try {
       const dir = path5.dirname(this.indexPath);
       await fs4.mkdir(dir, { recursive: true });
-      const data = Array.from(notes.entries());
+      const data = {
+        version: 2,
+        chunks: Array.from(snapshot.chunks.entries()),
+        noteStates: Array.from(snapshot.noteStates.entries())
+      };
       await fs4.writeFile(this.indexPath, JSON.stringify(data), "utf-8");
-      logInfo(`vector index saved: ${notes.size} entries to ${this.indexPath}`);
+      logInfo(
+        `vector index saved: ${snapshot.chunks.size} chunk entries and ${snapshot.noteStates.size} note states to ${this.indexPath}`
+      );
     } catch (error) {
       logError(`failed to save vector index: ${String(error)}`);
     }
@@ -2660,7 +2853,12 @@ var semanticIndexStatusOutputSchema = z5.object({
   ready: z5.boolean(),
   isEmpty: z5.boolean(),
   modelReady: z5.boolean(),
-  pendingSample: z5.array(z5.string())
+  pendingSample: z5.array(z5.string()),
+  scannedCount: z5.number().int().min(0),
+  skippedCount: z5.number().int().min(0),
+  queuedCount: z5.number().int().min(0),
+  flushedCount: z5.number().int().min(0),
+  removedCount: z5.number().int().min(0)
 });
 var semanticSearchOutputSchema = z5.object({
   query: z5.string(),
@@ -2720,8 +2918,11 @@ var deleteNoteOutputSchema = z5.object({
 });
 var refreshSemanticIndexOutputSchema = z5.object({
   totalFound: z5.number().int().min(0),
+  scannedCount: z5.number().int().min(0),
+  skippedCount: z5.number().int().min(0),
   queuedCount: z5.number().int().min(0),
   flushedCount: z5.number().int().min(0),
+  removedCount: z5.number().int().min(0),
   pendingCount: z5.number().int().min(0),
   indexedNoteCount: z5.number().int().min(0),
   indexedChunkCount: z5.number().int().min(0),
@@ -2748,8 +2949,11 @@ function registerNoteTools(server, noteService) {
           result,
           [
             `totalFound=${result.totalFound}`,
+            `scanned=${result.scannedCount}`,
+            `skipped=${result.skippedCount}`,
             `queued=${result.queuedCount}`,
             `flushed=${result.flushedCount}`,
+            `removed=${result.removedCount}`,
             `pending=${result.pendingCount}`,
             `indexedNotes=${result.indexedNoteCount}`,
             `indexedChunks=${result.indexedChunkCount}`,
@@ -3720,18 +3924,18 @@ async function runServer() {
   const runtimePaths = await resolveRuntimePaths(pluginClient);
   const { server, semanticService, vectorStore } = createServer(runtimePaths, pluginClient);
   const existingNotes = await vectorStore.load();
-  semanticService.setNotes(existingNotes);
+  semanticService.setSnapshot(existingNotes);
   const shutdown = async () => {
     clearInterval(saveInterval);
     logInfo("shutting down, saving vector index...");
-    await vectorStore.save(semanticService.getNotes());
+    await vectorStore.save(semanticService.getSnapshot());
     process.exit(0);
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
   const saveInterval = setInterval(
     async () => {
-      await vectorStore.save(semanticService.getNotes());
+      await vectorStore.save(semanticService.getSnapshot());
     },
     5 * 60 * 1e3
   );

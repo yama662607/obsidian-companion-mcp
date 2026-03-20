@@ -2,6 +2,7 @@ type IndexJob = {
   path: string;
   content: string;
   updatedAt: number;
+  size: number;
 };
 
 export class IndexingQueue {
@@ -23,7 +24,11 @@ export class IndexingQueue {
   enqueue(job: IndexJob): boolean {
     const existingIndex = this.queue.findIndex((item) => item.path === job.path);
     if (existingIndex !== -1) {
-      if (this.queue[existingIndex].updatedAt >= job.updatedAt) {
+      const existing = this.queue[existingIndex];
+      if (existing.updatedAt > job.updatedAt) {
+        return false;
+      }
+      if (existing.updatedAt === job.updatedAt && existing.size === job.size) {
         return false;
       }
       this.queue.splice(existingIndex, 1);

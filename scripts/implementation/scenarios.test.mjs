@@ -110,6 +110,9 @@ test("semantic service indexes chunks instead of full-note excerpts", () => {
   assert.match(source, /indexedChunkCount/);
   assert.match(source, /indexedNoteCount/);
   assert.match(source, /chunkIdsByPath/);
+  assert.match(source, /noteStates = new Map/);
+  assert.match(source, /removeMissingPaths/);
+  assert.match(source, /recordRefreshStats/);
   assert.match(source, /ready:\s*pendingCount === 0 && modelReady/);
   assert.match(source, /const note = fallback\.readNote\(value\.path\)/);
   assert.match(source, /boundSemanticChunkText\(value\.snippet\)/);
@@ -146,6 +149,10 @@ test("note service drains pending semantic work and preserves fallback move reas
   const source = read("mcp/src/domain/noteService.ts");
 
   assert.match(source, /while \(this\.semanticService\.getIndexStatus\(\)\.pendingCount > 0\)/);
+  assert.match(source, /const notes = fallback\.listNoteStats\(\)/);
+  assert.match(source, /removeMissingPaths\(currentPaths\)/);
+  assert.match(source, /skippedCount/);
+  assert.match(source, /removedCount/);
   assert.match(source, /private getFallbackDegradedReason/);
   assert.match(source, /const mergedMetadata = \{ \.\.\.existing\.metadata, \.\.\.metadata \}/);
   assert.match(source, /plugin_validation_fallback_used/);
@@ -307,6 +314,7 @@ test("fallback storage remains vault-anchored and returns file stats", () => {
   assert.match(source, /updatedAt:/);
   assert.match(source, /size:/);
   assert.match(source, /getNoteStat/);
+  assert.match(source, /export function listNoteStats/);
   assert.match(source, /Path escapes vault root/);
 });
 

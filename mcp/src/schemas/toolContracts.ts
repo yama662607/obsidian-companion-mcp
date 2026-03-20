@@ -447,6 +447,11 @@ export const semanticIndexStatusOutputSchema = z.object({
   isEmpty: z.boolean(),
   modelReady: z.boolean(),
   pendingSample: z.array(z.string()),
+  scannedCount: z.number().int().min(0),
+  skippedCount: z.number().int().min(0),
+  queuedCount: z.number().int().min(0),
+  flushedCount: z.number().int().min(0),
+  removedCount: z.number().int().min(0),
 });
 
 export const semanticSearchOutputSchema = z.object({
@@ -514,8 +519,11 @@ export const deleteNoteOutputSchema = z.object({
 
 export const refreshSemanticIndexOutputSchema = z.object({
   totalFound: z.number().int().min(0),
+  scannedCount: z.number().int().min(0),
+  skippedCount: z.number().int().min(0),
   queuedCount: z.number().int().min(0),
   flushedCount: z.number().int().min(0),
+  removedCount: z.number().int().min(0),
   pendingCount: z.number().int().min(0),
   indexedNoteCount: z.number().int().min(0),
   indexedChunkCount: z.number().int().min(0),

@@ -144,13 +144,13 @@ export async function runServer(): Promise<void> {
 
   // Load existing index from storage
   const existingNotes = await vectorStore.load();
-  semanticService.setNotes(existingNotes);
+  semanticService.setSnapshot(existingNotes);
 
   // Handle graceful shutdown to save index
   const shutdown = async () => {
     clearInterval(saveInterval);
     logInfo("shutting down, saving vector index...");
-    await vectorStore.save(semanticService.getNotes());
+    await vectorStore.save(semanticService.getSnapshot());
     process.exit(0);
   };
 
@@ -160,7 +160,7 @@ export async function runServer(): Promise<void> {
   // Periodically save index (every 5 minutes)
   const saveInterval = setInterval(
     async () => {
-      await vectorStore.save(semanticService.getNotes());
+      await vectorStore.save(semanticService.getSnapshot());
     },
     5 * 60 * 1000,
   );

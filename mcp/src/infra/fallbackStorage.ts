@@ -18,6 +18,12 @@ export type ListedEntry = {
   size: number;
 };
 
+export type NoteStatRecord = {
+  path: string;
+  updatedAt: number;
+  size: number;
+};
+
 type ListEntriesOptions = {
   cursor?: string;
   limit?: number;
@@ -296,29 +302,28 @@ export function moveNote(fromPath: string, toPath: string): boolean {
   return true;
 }
 
-export function listNotes(): { path: string; updatedAt: number; content: string }[] {
+export function listNoteStats(): NoteStatRecord[] {
   const vaultRoot = getVaultRoot();
-  const results: { path: string; updatedAt: number; content: string }[] = [];
+  const results: NoteStatRecord[] = [];
 
   function scan(dir: string): void {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      const relativePath = path.relative(vaultRoot, fullPath);
+      if (entry.name.startsWith(".")) {
+        continue;
+      }
 
-      // Skip hidden directories (like .obsidian, .git)
+      const fullPath = path.join(dir, entry.name);
+      const relativePath = path.relative(vaultRoot, fullPath).split(path.sep).join("/");
+
       if (entry.isDirectory()) {
-        if (entry.name.startsWith(".")) {
-          continue;
-        }
         scan(fullPath);
       } else if (entry.isFile() && entry.name.endsWith(".md")) {
         const stats = fs.statSync(fullPath);
-        const content = fs.readFileSync(fullPath, "utf8");
         results.push({
           path: relativePath,
           updatedAt: stats.mtimeMs,
-          content,
+          size: stats.size,
         });
       }
     }
@@ -328,5 +333,21 @@ export function listNotes(): { path: string; updatedAt: number; content: string 
     scan(vaultRoot);
   }
 
+  results.sort((left, right) => left.path.localeCompare(right.path, "en"));
   return results;
+}
+
+export function listNotes(): { path: string; updatedAt: number; content: string }[] {
+  return listNoteStats().map((entry) => {
+    const note = readNote(entry.path);
+    if (!note) {
+      throw new DomainError("NOT_FOUND", `Note not found: ${entry.path}`);
+    }
+
+    return {
+      path: entry.path,
+      updatedAt: entry.updatedAt,
+      content: note.content,
+    };
+  });
 }

@@ -41,8 +41,11 @@ export function registerNoteTools(server: McpServer, noteService: NoteService): 
           result,
           [
             `totalFound=${result.totalFound}`,
+            `scanned=${result.scannedCount}`,
+            `skipped=${result.skippedCount}`,
             `queued=${result.queuedCount}`,
             `flushed=${result.flushedCount}`,
+            `removed=${result.removedCount}`,
             `pending=${result.pendingCount}`,
             `indexedNotes=${result.indexedNoteCount}`,
             `indexedChunks=${result.indexedChunkCount}`,

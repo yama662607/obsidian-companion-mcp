@@ -455,6 +455,141 @@ test("mcp e2e: semantic search bounds legacy payloads loaded from disk", async (
   assert.ok(semantic.content[0].text.length < 4_000);
 });
 
+test("mcp e2e: refresh skips unchanged notes after metadata-first reconciliation", async (t) => {
+  resetE2EVault();
+  const session = await createMcpClient({
+    envOverrides: {
+      USE_REMOTE_EMBEDDING: "true",
+    },
+  });
+  t.after(async () => {
+    await session.close();
+  });
+
+  const notePath = "e2e/refresh-skip.md";
+  const created = await session.client.callTool({
+    name: "create_note",
+    arguments: {
+      path: notePath,
+      content: "# Refresh Skip\n\nunchanged payload\n",
+    },
+  });
+  assert.ok(!created.isError);
+
+  const firstRefresh = await session.client.callTool({
+    name: "refresh_semantic_index",
+    arguments: {},
+  });
+  assert.ok(!firstRefresh.isError);
+  assert.equal(firstRefresh.structuredContent.scannedCount, 1);
+
+  const secondRefresh = await session.client.callTool({
+    name: "refresh_semantic_index",
+    arguments: {},
+  });
+  assert.ok(!secondRefresh.isError);
+  assert.equal(secondRefresh.structuredContent.scannedCount, 1);
+  assert.equal(secondRefresh.structuredContent.skippedCount, 1);
+  assert.equal(secondRefresh.structuredContent.queuedCount, 0);
+  assert.equal(secondRefresh.structuredContent.flushedCount, 0);
+  assert.equal(secondRefresh.structuredContent.removedCount, 0);
+  assert.match(secondRefresh.content[0].text, /skipped=1/);
+});
+
+test("mcp e2e: refresh removes stale semantic entries for deleted notes", async (t) => {
+  resetE2EVault();
+  const session = await createMcpClient({
+    envOverrides: {
+      USE_REMOTE_EMBEDDING: "true",
+    },
+  });
+  t.after(async () => {
+    await session.close();
+  });
+
+  const notePath = "e2e/stale-delete.md";
+  const created = await session.client.callTool({
+    name: "create_note",
+    arguments: {
+      path: notePath,
+      content: "# Stale Delete\n\nremove me\n",
+    },
+  });
+  assert.ok(!created.isError);
+
+  const firstRefresh = await session.client.callTool({
+    name: "refresh_semantic_index",
+    arguments: {},
+  });
+  assert.ok(!firstRefresh.isError);
+  assert.equal(firstRefresh.structuredContent.indexedNoteCount, 1);
+
+  fs.rmSync(path.join(e2eVaultRoot, "e2e", "stale-delete.md"));
+
+  const secondRefresh = await session.client.callTool({
+    name: "refresh_semantic_index",
+    arguments: {},
+  });
+  assert.ok(!secondRefresh.isError);
+  assert.equal(secondRefresh.structuredContent.removedCount, 1);
+  assert.equal(secondRefresh.structuredContent.indexedNoteCount, 0);
+
+  const status = await session.client.callTool({
+    name: "get_semantic_index_status",
+    arguments: {},
+  });
+  assert.ok(!status.isError);
+  assert.equal(status.structuredContent.removedCount, 1);
+  assert.equal(status.structuredContent.indexedNoteCount, 0);
+});
+
+test("mcp e2e: refresh reports changed-vs-skipped counts for larger vaults", async (t) => {
+  resetE2EVault();
+  const session = await createMcpClient({
+    envOverrides: {
+      USE_REMOTE_EMBEDDING: "true",
+    },
+  });
+  t.after(async () => {
+    await session.close();
+  });
+
+  for (let index = 0; index < 6; index += 1) {
+    const created = await session.client.callTool({
+      name: "create_note",
+      arguments: {
+        path: `e2e/large-${index}.md`,
+        content: `# Large ${index}\n\npayload ${index}\n`,
+      },
+    });
+    assert.ok(!created.isError);
+  }
+
+  const seeded = await session.client.callTool({
+    name: "refresh_semantic_index",
+    arguments: {},
+  });
+  assert.ok(!seeded.isError);
+  assert.equal(seeded.structuredContent.scannedCount, 6);
+
+  fs.writeFileSync(
+    path.join(e2eVaultRoot, "e2e", "large-3.md"),
+    "# Large 3\n\npayload 3 updated\n",
+    "utf8",
+  );
+
+  const refreshed = await session.client.callTool({
+    name: "refresh_semantic_index",
+    arguments: {},
+  });
+  assert.ok(!refreshed.isError);
+  assert.equal(refreshed.structuredContent.scannedCount, 6);
+  assert.equal(refreshed.structuredContent.skippedCount, 5);
+  assert.equal(refreshed.structuredContent.queuedCount, 1);
+  assert.equal(refreshed.structuredContent.flushedCount, 1);
+  assert.equal(refreshed.structuredContent.removedCount, 0);
+});
+
 test("mcp e2e: read and edit tools accept JSON-string encoded nested arguments", async (t) => {
   resetE2EVault();
   const session = await createMcpClient();

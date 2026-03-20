@@ -3,7 +3,7 @@ import { createEmbeddingProvider, type EmbeddingProvider } from "./embeddingProv
 import { IndexingQueue } from "./indexingQueue";
 import { boundSemanticChunkText, buildSemanticChunks, readTitleFromPath } from "./noteDocument";
 
-type IndexedChunk = {
+export type IndexedChunk = {
   id: string;
   path: string;
   title: string;
@@ -15,12 +15,43 @@ type IndexedChunk = {
   embedding: number[];
 };
 
+export type IndexedNoteState = {
+  path: string;
+  updatedAt: number;
+  size: number;
+  chunkIds: string[];
+};
+
+export type SemanticSnapshot = {
+  chunks: Map<string, IndexedChunk>;
+  noteStates: Map<string, IndexedNoteState>;
+};
+
+type IndexedChunkLike =
+  | IndexedChunk
+  | {
+      path: string;
+      snippet: string;
+      updatedAt: number;
+      embedding: number[];
+    };
+
+type LegacyChunkMap = Map<string, IndexedChunkLike>;
+
 type ChunkSearchOptions = {
   topK: number;
   maxPerNote: number;
   minScore?: number;
   pathPrefix?: string;
   notePaths?: string[];
+};
+
+type RefreshStats = {
+  scannedCount: number;
+  skippedCount: number;
+  queuedCount: number;
+  flushedCount: number;
+  removedCount: number;
 };
 
 function cosineSimilarity(a: number[], b: number[]): number {
@@ -32,42 +63,103 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dotProduct;
 }
 
+function isSnapshot(value: SemanticSnapshot | LegacyChunkMap): value is SemanticSnapshot {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "chunks" in value &&
+    "noteStates" in value &&
+    value.chunks instanceof Map &&
+    value.noteStates instanceof Map
+  );
+}
+
 export class SemanticService {
   private chunks = new Map<string, IndexedChunk>();
   private chunkIdsByPath = new Map<string, string[]>();
+  private noteStates = new Map<string, IndexedNoteState>();
   private provider: EmbeddingProvider;
   private queue = new IndexingQueue();
+  private lastRefreshStats: RefreshStats = {
+    scannedCount: 0,
+    skippedCount: 0,
+    queuedCount: 0,
+    flushedCount: 0,
+    removedCount: 0,
+  };
 
   constructor(preferRemote = false, vaultPath = "", configDir = "") {
     this.provider = createEmbeddingProvider(preferRemote, vaultPath, configDir);
   }
 
-  private replaceNoteChunks(path: string, nextChunks: IndexedChunk[]): void {
+  private setNoteState(path: string, updatedAt: number, size: number, chunkIds: string[]): void {
+    this.chunkIdsByPath.set(path, chunkIds);
+    this.noteStates.set(path, {
+      path,
+      updatedAt,
+      size,
+      chunkIds,
+    });
+  }
+
+  private replaceNoteChunks(
+    path: string,
+    nextChunks: IndexedChunk[],
+    updatedAt: number,
+    size: number,
+  ): void {
     const previousChunkIds = this.chunkIdsByPath.get(path) ?? [];
     for (const chunkId of previousChunkIds) {
       this.chunks.delete(chunkId);
     }
 
-    this.chunkIdsByPath.set(
-      path,
-      nextChunks.map((chunk) => chunk.id),
-    );
+    const nextChunkIds = nextChunks.map((chunk) => chunk.id);
     for (const chunk of nextChunks) {
       this.chunks.set(chunk.id, chunk);
     }
+    this.setNoteState(path, updatedAt, size, nextChunkIds);
   }
 
-  upsert(path: string, content: string, updatedAt: number): boolean {
-    const existingChunkIds = this.chunkIdsByPath.get(path);
-    const existingUpdatedAt =
-      existingChunkIds && existingChunkIds.length > 0
-        ? (this.chunks.get(existingChunkIds[0])?.updatedAt ?? 0)
-        : 0;
-    if (existingUpdatedAt >= updatedAt) {
+  private rebuildChunkIds(): void {
+    this.chunkIdsByPath = new Map();
+    for (const [id, chunk] of this.chunks.entries()) {
+      const chunkIds = this.chunkIdsByPath.get(chunk.path) ?? [];
+      chunkIds.push(id);
+      this.chunkIdsByPath.set(chunk.path, chunkIds);
+    }
+  }
+
+  private seedNoteStateFromChunks(path: string): void {
+    if (this.noteStates.has(path)) {
+      return;
+    }
+
+    const chunkIds = this.chunkIdsByPath.get(path) ?? [];
+    const firstChunk = chunkIds.length > 0 ? this.chunks.get(chunkIds[0]) : undefined;
+    if (!firstChunk) {
+      return;
+    }
+
+    const stat = fallback.getNoteStat(path);
+    const derivedSize =
+      stat?.size ??
+      Buffer.byteLength(
+        chunkIds
+          .map((chunkId) => this.chunks.get(chunkId)?.text ?? "")
+          .filter((text) => text.length > 0)
+          .join("\n"),
+        "utf8",
+      );
+    this.setNoteState(path, firstChunk.updatedAt, derivedSize, chunkIds);
+  }
+
+  upsert(path: string, content: string, updatedAt: number, size: number): boolean {
+    const existing = this.noteStates.get(path);
+    if (existing && existing.updatedAt >= updatedAt && existing.size === size) {
       return false;
     }
 
-    return this.queue.enqueue({ path, content, updatedAt });
+    return this.queue.enqueue({ path, content, updatedAt, size });
   }
 
   flushIndex(maxItems = 25): Promise<number> {
@@ -90,22 +182,41 @@ export class SemanticService {
         });
       }
 
-      this.replaceNoteChunks(job.path, nextChunks);
+      this.replaceNoteChunks(job.path, nextChunks, job.updatedAt, job.size);
     }, maxItems);
   }
 
   remove(path: string): void {
-    const existingChunkIds = this.chunkIdsByPath.get(path) ?? [];
+    const existingChunkIds =
+      this.noteStates.get(path)?.chunkIds ?? this.chunkIdsByPath.get(path) ?? [];
     for (const chunkId of existingChunkIds) {
       this.chunks.delete(chunkId);
     }
     this.chunkIdsByPath.delete(path);
+    this.noteStates.delete(path);
     this.queue.removePath(path);
   }
 
+  removeMissingPaths(existingPaths: Set<string>): number {
+    let removedCount = 0;
+    for (const path of Array.from(this.noteStates.keys())) {
+      if (existingPaths.has(path)) {
+        continue;
+      }
+      this.remove(path);
+      removedCount += 1;
+    }
+    return removedCount;
+  }
+
   movePath(from: string, to: string): void {
-    const existingChunkIds = this.chunkIdsByPath.get(from) ?? [];
+    const existing = this.noteStates.get(from);
+    const existingChunkIds = existing?.chunkIds ?? this.chunkIdsByPath.get(from) ?? [];
     if (existingChunkIds.length === 0) {
+      if (existing) {
+        this.noteStates.delete(from);
+        this.setNoteState(to, existing.updatedAt, existing.size, []);
+      }
       this.queue.renamePath(from, to);
       return;
     }
@@ -126,8 +237,25 @@ export class SemanticService {
     }
 
     this.chunkIdsByPath.delete(from);
-    this.replaceNoteChunks(to, movedChunks);
+    this.noteStates.delete(from);
+    this.replaceNoteChunks(to, movedChunks, existing?.updatedAt ?? Date.now(), existing?.size ?? 0);
     this.queue.renamePath(from, to);
+  }
+
+  recordRefreshStats(stats: RefreshStats): void {
+    this.lastRefreshStats = stats;
+  }
+
+  getNoteState(path: string): IndexedNoteState | undefined {
+    const state = this.noteStates.get(path);
+    if (!state) {
+      return undefined;
+    }
+    return { ...state, chunkIds: [...state.chunkIds] };
+  }
+
+  getIndexedPaths(): string[] {
+    return Array.from(this.noteStates.keys());
   }
 
   getIndexStatus(sampleLimit = 20): {
@@ -139,18 +267,28 @@ export class SemanticService {
     isEmpty: boolean;
     modelReady: boolean;
     pendingSample: string[];
+    scannedCount: number;
+    skippedCount: number;
+    queuedCount: number;
+    flushedCount: number;
+    removedCount: number;
   } {
     const pendingCount = this.queue.getPendingCount();
     const modelReady = this.provider.getRuntimeState().modelReady;
     return {
       pendingCount,
-      indexedNoteCount: this.chunkIdsByPath.size,
+      indexedNoteCount: this.noteStates.size,
       indexedChunkCount: this.chunks.size,
       running: this.queue.isRunning(),
       ready: pendingCount === 0 && modelReady,
       isEmpty: this.chunks.size === 0,
       modelReady,
       pendingSample: this.queue.getPendingSample(sampleLimit),
+      scannedCount: this.lastRefreshStats.scannedCount,
+      skippedCount: this.lastRefreshStats.skippedCount,
+      queuedCount: this.lastRefreshStats.queuedCount,
+      flushedCount: this.lastRefreshStats.flushedCount,
+      removedCount: this.lastRefreshStats.removedCount,
     };
   }
 
@@ -248,22 +386,41 @@ export class SemanticService {
     return this.chunks;
   }
 
-  setNotes(
-    notes: Map<
-      string,
-      | IndexedChunk
-      | {
-          path: string;
-          snippet: string;
-          updatedAt: number;
-          embedding: number[];
-        }
-    >,
-  ): void {
+  getSnapshot(): SemanticSnapshot {
+    return {
+      chunks: new Map(this.chunks),
+      noteStates: new Map(
+        Array.from(this.noteStates.entries()).map(([path, state]) => [
+          path,
+          { ...state, chunkIds: [...state.chunkIds] },
+        ]),
+      ),
+    };
+  }
+
+  setNotes(notes: LegacyChunkMap): void {
+    this.setSnapshot(notes);
+  }
+
+  setSnapshot(snapshot: SemanticSnapshot | LegacyChunkMap): void {
     this.chunks = new Map();
     this.chunkIdsByPath = new Map();
+    this.noteStates = new Map();
 
-    for (const [id, value] of notes.entries()) {
+    if (isSnapshot(snapshot)) {
+      this.chunks = new Map(snapshot.chunks);
+      this.rebuildChunkIds();
+      for (const [path, state] of snapshot.noteStates.entries()) {
+        const chunkIds = state.chunkIds.filter((chunkId) => this.chunks.has(chunkId));
+        this.setNoteState(path, state.updatedAt, state.size, chunkIds);
+      }
+      for (const path of this.chunkIdsByPath.keys()) {
+        this.seedNoteStateFromChunks(path);
+      }
+      return;
+    }
+
+    for (const [id, value] of snapshot.entries()) {
       if ("startLine" in value && "endLine" in value && "text" in value) {
         this.chunks.set(id, value);
         const chunkIds = this.chunkIdsByPath.get(value.path) ?? [];
@@ -274,7 +431,7 @@ export class SemanticService {
 
       const note = fallback.readNote(value.path);
       if (note) {
-        this.upsert(value.path, note.content, note.updatedAt);
+        this.upsert(value.path, note.content, note.updatedAt, note.size);
         continue;
       }
 
@@ -290,7 +447,16 @@ export class SemanticService {
         updatedAt: value.updatedAt,
         embedding: value.embedding,
       });
-      this.chunkIdsByPath.set(value.path, [chunkId]);
+      this.setNoteState(
+        value.path,
+        value.updatedAt,
+        Buffer.byteLength(boundSemanticChunkText(value.snippet), "utf8"),
+        [chunkId],
+      );
+    }
+
+    for (const path of this.chunkIdsByPath.keys()) {
+      this.seedNoteStateFromChunks(path);
     }
   }
 }
