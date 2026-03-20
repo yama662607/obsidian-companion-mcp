@@ -41,6 +41,11 @@ test("shared contracts define discriminated edit targets and changes", () => {
   assert.match(source, /jsonStringOr\(noteAnchorSchema, "anchor"\)/);
   assert.match(source, /jsonStringOr\(editTargetSchema, "target"\)/);
   assert.match(source, /jsonStringOr\(editChangeSchema, "change"\)/);
+  assert.match(
+    source,
+    /Which match to replace\. Use "first", "last", "all", or a positive number like 1\./,
+  );
+  assert.match(source, /Edit target returned by read_note\.editTarget/);
 });
 
 test("read/edit tools are unified around edit_target handoff", () => {
@@ -52,6 +57,10 @@ test("read/edit tools are unified around edit_target handoff", () => {
   assert.match(source, /outputSchema:\s*readNoteOutputSchema/);
   assert.match(source, /outputSchema:\s*readActiveContextOutputSchema/);
   assert.match(source, /outputSchema:\s*editNoteOutputSchema/);
+  assert.match(
+    source,
+    /Supported change\.type values are replaceTarget, append, prepend, insertAtCursor, and replaceText/,
+  );
   assert.match(source, /editTarget:/);
   assert.match(source, /documentEditTarget:/);
   assert.match(source, /const editTargets =/);
@@ -340,5 +349,15 @@ test("tool result preview avoids generic object stringification", () => {
   assert.match(source, /case "number":/);
   assert.match(source, /case "boolean":/);
   assert.match(source, /case "bigint":/);
+  assert.match(source, /humanizeValidationMessage/);
+  assert.match(
+    source,
+    /Supported edit change\.type values are replaceTarget, append, prepend, insertAtCursor, and replaceText\./,
+  );
+  assert.match(source, /Use "first", "last", "all", or a positive number such as 1\./);
+  assert.match(
+    source,
+    /Pass the structured target\/change object returned by read_note or read_active_context\./,
+  );
   assert.doesNotMatch(source, /return String\(structuredContent\)/);
 });

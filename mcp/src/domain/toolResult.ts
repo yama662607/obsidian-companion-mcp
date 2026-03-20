@@ -25,6 +25,25 @@ export interface ToolFailure {
 
 type McpCompatibleResult = Record<string, unknown>;
 
+function humanizeValidationMessage(message: string): string {
+  if (
+    message.includes("must be equal to constant") ||
+    message.includes("Invalid discriminator value")
+  ) {
+    return `${message} Supported edit change.type values are replaceTarget, append, prepend, insertAtCursor, and replaceText.`;
+  }
+
+  if (message.includes("occurrence")) {
+    return `${message} Use "first", "last", "all", or a positive number such as 1.`;
+  }
+
+  if (message.includes("must be an object or a JSON string representing one")) {
+    return `${message} Pass the structured target/change object returned by read_note or read_active_context.`;
+  }
+
+  return message;
+}
+
 function buildStructuredPreview(structuredContent: unknown): string | null {
   if (structuredContent === null || structuredContent === undefined) {
     return null;
@@ -77,22 +96,24 @@ export function okResult<TData>(
 }
 
 export function errorResult(error: DomainError): ToolFailure & McpCompatibleResult {
+  const message =
+    error.code === "VALIDATION" ? humanizeValidationMessage(error.message) : error.message;
   const payload = {
     isError: true,
     code: error.code,
-    message: error.message,
+    message,
     correlationId: error.correlationId,
   };
 
   return {
     isError: true,
     code: error.code,
-    message: error.message,
+    message,
     correlationId: error.correlationId,
     content: [{ type: "text", text: JSON.stringify(payload) }],
     structuredContent: {
       code: error.code,
-      message: error.message,
+      message,
       correlationId: error.correlationId,
     },
   };

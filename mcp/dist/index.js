@@ -2392,6 +2392,18 @@ function registerSchemaSummaryResource(server) {
 }
 
 // src/domain/toolResult.ts
+function humanizeValidationMessage(message) {
+  if (message.includes("must be equal to constant") || message.includes("Invalid discriminator value")) {
+    return `${message} Supported edit change.type values are replaceTarget, append, prepend, insertAtCursor, and replaceText.`;
+  }
+  if (message.includes("occurrence")) {
+    return `${message} Use "first", "last", "all", or a positive number such as 1.`;
+  }
+  if (message.includes("must be an object or a JSON string representing one")) {
+    return `${message} Pass the structured target/change object returned by read_note or read_active_context.`;
+  }
+  return message;
+}
 function buildStructuredPreview(structuredContent) {
   if (structuredContent === null || structuredContent === void 0) {
     return null;
@@ -2436,21 +2448,22 @@ ${preview}` : summary;
   };
 }
 function errorResult(error) {
+  const message = error.code === "VALIDATION" ? humanizeValidationMessage(error.message) : error.message;
   const payload = {
     isError: true,
     code: error.code,
-    message: error.message,
+    message,
     correlationId: error.correlationId
   };
   return {
     isError: true,
     code: error.code,
-    message: error.message,
+    message,
     correlationId: error.correlationId,
     content: [{ type: "text", text: JSON.stringify(payload) }],
     structuredContent: {
       code: error.code,
-      message: error.message,
+      message,
       correlationId: error.correlationId
     }
   };
@@ -2546,14 +2559,18 @@ var activeAnchorSchema = z5.discriminatedUnion("type", [
 var noteEditTargetSchema = z5.object({
   source: z5.literal("note"),
   note: notePathSchema.describe("Vault-relative note path"),
-  anchor: noteAnchorSchema,
+  anchor: noteAnchorSchema.describe(
+    'Target within the note. Use {"type":"full"} for whole-note edits.'
+  ),
   revision: z5.string().nullable(),
   currentText: z5.string().optional()
 });
 var activeEditTargetSchema = z5.object({
   source: z5.literal("active"),
   activeFile: z5.string().nullable(),
-  anchor: activeAnchorSchema,
+  anchor: activeAnchorSchema.describe(
+    "Active editor target. Use selection, cursor, range, or full document anchors returned by read_active_context."
+  ),
   revision: z5.null(),
   currentText: z5.string().optional()
 });
@@ -2564,30 +2581,25 @@ var editTargetSchema = z5.discriminatedUnion("source", [
 var editChangeSchema = z5.discriminatedUnion("type", [
   z5.object({
     type: z5.literal("replaceTarget"),
-    content: z5.string()
+    content: z5.string().describe("Replace the entire resolved target with this content.")
   }),
   z5.object({
     type: z5.literal("append"),
-    content: z5.string()
+    content: z5.string().describe("Append this content to the resolved target.")
   }),
   z5.object({
     type: z5.literal("prepend"),
-    content: z5.string()
+    content: z5.string().describe("Prepend this content to the resolved target.")
   }),
   z5.object({
     type: z5.literal("insertAtCursor"),
-    content: z5.string()
+    content: z5.string().describe("Insert this content at an active editor cursor target.")
   }),
   z5.object({
     type: z5.literal("replaceText"),
-    find: z5.string().min(1),
-    replace: z5.string(),
-    occurrence: z5.union([
-      z5.literal("first"),
-      z5.literal("last"),
-      z5.literal("all"),
-      z5.number().int().min(1)
-    ])
+    find: z5.string().min(1).describe("Exact text to find inside the resolved target."),
+    replace: z5.string().describe("Replacement text."),
+    occurrence: z5.union([z5.literal("first"), z5.literal("last"), z5.literal("all"), z5.number().int().min(1)]).describe('Which match to replace. Use "first", "last", "all", or a positive number like 1.')
   })
 ]);
 var readNoteInputSchema = z5.object({
@@ -2603,8 +2615,12 @@ var readActiveContextInputSchema = z5.object({
   maxChars: z5.number().int().min(200).max(2e4).optional().default(6e3)
 });
 var editNoteInputSchema = z5.object({
-  target: jsonStringOr(editTargetSchema, "target"),
-  change: jsonStringOr(editChangeSchema, "change")
+  target: jsonStringOr(editTargetSchema, "target").describe(
+    "Edit target returned by read_note.editTarget, read_note.documentEditTarget, or read_active_context.editTargets.*"
+  ),
+  change: jsonStringOr(editChangeSchema, "change").describe(
+    "Edit operation. Supported types: replaceTarget, append, prepend, insertAtCursor, replaceText."
+  )
 });
 var createNoteInputSchema = z5.object({
   path: notePathSchema,
@@ -3332,7 +3348,7 @@ function registerReadEditTools(server, noteService, editorService) {
   server.registerTool(
     TOOL_NAMES.EDIT_NOTE,
     {
-      description: "Edit a persisted note or the active editor using a structured target and change contract.",
+      description: 'Edit a persisted note or the active editor using a structured target and change contract. Use the target returned by read_note.editTarget, read_note.documentEditTarget, or read_active_context.editTargets.*. Supported change.type values are replaceTarget, append, prepend, insertAtCursor, and replaceText. For replaceText, occurrence must be "first", "last", "all", or a positive number.',
       inputSchema: editNoteInputSchema,
       outputSchema: editNoteOutputSchema
     },

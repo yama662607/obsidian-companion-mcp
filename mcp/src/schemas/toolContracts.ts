@@ -81,7 +81,9 @@ export const activeAnchorSchema = z.discriminatedUnion("type", [
 export const noteEditTargetSchema = z.object({
   source: z.literal("note"),
   note: notePathSchema.describe("Vault-relative note path"),
-  anchor: noteAnchorSchema,
+  anchor: noteAnchorSchema.describe(
+    'Target within the note. Use {"type":"full"} for whole-note edits.',
+  ),
   revision: z.string().nullable(),
   currentText: z.string().optional(),
 });
@@ -89,7 +91,9 @@ export const noteEditTargetSchema = z.object({
 export const activeEditTargetSchema = z.object({
   source: z.literal("active"),
   activeFile: z.string().nullable(),
-  anchor: activeAnchorSchema,
+  anchor: activeAnchorSchema.describe(
+    "Active editor target. Use selection, cursor, range, or full document anchors returned by read_active_context.",
+  ),
   revision: z.null(),
   currentText: z.string().optional(),
 });
@@ -102,30 +106,27 @@ export const editTargetSchema = z.discriminatedUnion("source", [
 export const editChangeSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("replaceTarget"),
-    content: z.string(),
+    content: z.string().describe("Replace the entire resolved target with this content."),
   }),
   z.object({
     type: z.literal("append"),
-    content: z.string(),
+    content: z.string().describe("Append this content to the resolved target."),
   }),
   z.object({
     type: z.literal("prepend"),
-    content: z.string(),
+    content: z.string().describe("Prepend this content to the resolved target."),
   }),
   z.object({
     type: z.literal("insertAtCursor"),
-    content: z.string(),
+    content: z.string().describe("Insert this content at an active editor cursor target."),
   }),
   z.object({
     type: z.literal("replaceText"),
-    find: z.string().min(1),
-    replace: z.string(),
-    occurrence: z.union([
-      z.literal("first"),
-      z.literal("last"),
-      z.literal("all"),
-      z.number().int().min(1),
-    ]),
+    find: z.string().min(1).describe("Exact text to find inside the resolved target."),
+    replace: z.string().describe("Replacement text."),
+    occurrence: z
+      .union([z.literal("first"), z.literal("last"), z.literal("all"), z.number().int().min(1)])
+      .describe('Which match to replace. Use "first", "last", "all", or a positive number like 1.'),
   }),
 ]);
 
@@ -147,8 +148,12 @@ export const readActiveContextInputSchema = z.object({
 });
 
 export const editNoteInputSchema = z.object({
-  target: jsonStringOr(editTargetSchema, "target"),
-  change: jsonStringOr(editChangeSchema, "change"),
+  target: jsonStringOr(editTargetSchema, "target").describe(
+    "Edit target returned by read_note.editTarget, read_note.documentEditTarget, or read_active_context.editTargets.*",
+  ),
+  change: jsonStringOr(editChangeSchema, "change").describe(
+    "Edit operation. Supported types: replaceTarget, append, prepend, insertAtCursor, replaceText.",
+  ),
 });
 
 export const createNoteInputSchema = z.object({

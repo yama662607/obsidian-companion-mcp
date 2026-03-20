@@ -292,7 +292,7 @@ export function registerReadEditTools(
     TOOL_NAMES.EDIT_NOTE,
     {
       description:
-        "Edit a persisted note or the active editor using a structured target and change contract.",
+        'Edit a persisted note or the active editor using a structured target and change contract. Use the target returned by read_note.editTarget, read_note.documentEditTarget, or read_active_context.editTargets.*. Supported change.type values are replaceTarget, append, prepend, insertAtCursor, and replaceText. For replaceText, occurrence must be "first", "last", "all", or a positive number.',
       inputSchema: editNoteInputSchema,
       outputSchema: editNoteOutputSchema,
     },
