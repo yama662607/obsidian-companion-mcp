@@ -307,6 +307,7 @@ test("prompts and capability resources reference the final tool surface", () => 
   const searchPrompt = read("mcp/src/prompts/searchThenInsert.ts");
   const rewritePrompt = read("mcp/src/prompts/contextRewrite.ts");
   const capability = read("mcp/src/resources/capabilityMatrix.ts");
+  const schemaSummary = read("mcp/src/resources/schemaSummary.ts");
 
   assert.match(searchPrompt, /TOOL_NAMES\.SEMANTIC_SEARCH_NOTES/);
   assert.match(searchPrompt, /TOOL_NAMES\.READ_ACTIVE_CONTEXT/);
@@ -314,6 +315,10 @@ test("prompts and capability resources reference the final tool surface", () => 
   assert.match(rewritePrompt, /TOOL_NAMES\.READ_ACTIVE_CONTEXT/);
   assert.match(rewritePrompt, /TOOL_NAMES\.EDIT_NOTE/);
   assert.match(capability, /TOOL_NAME_LIST/);
+  assert.match(schemaSummary, /preferStructuredArguments/);
+  assert.match(schemaSummary, /preferredShape: "object"/);
+  assert.match(schemaSummary, /replaceTarget requires change\.content, not change\.text\./);
+  assert.match(schemaSummary, /supportedTypes: \[/);
 });
 
 test("fallback storage remains vault-anchored and returns file stats", () => {
