@@ -269,7 +269,8 @@ test("mcp e2e: persisted discovery, read, edit, metadata, and lifecycle flow wor
     !lexical.structuredContent.results[0].snippet.text.includes("# Runtime Refactor\n\n##"),
   );
   assert.match(lexical.content[0].text, /runtime-refactor\.md/);
-  assert.match(lexical.content[0].text, /readHint=/);
+  assert.match(lexical.content[0].text, /lines=/);
+  assert.doesNotMatch(lexical.content[0].text, /readHint=/);
 
   const readHeading = await session.client.callTool({
     name: "read_note",
@@ -291,7 +292,8 @@ test("mcp e2e: persisted discovery, read, edit, metadata, and lifecycle flow wor
   assert.equal(readHeading.structuredContent.editTarget.source, "note");
   assert.equal(readHeading.structuredContent.selection.anchor.type, "heading");
   assert.deepEqual(readHeading.structuredContent.metadata.tags, ["mcp", "e2e"]);
-  assert.match(readHeading.content[0].text, /editTarget=/);
+  assert.match(readHeading.content[0].text, /availableTargets=editTarget,documentEditTarget/);
+  assert.doesNotMatch(readHeading.content[0].text, /editTarget=/);
 
   const appended = await session.client.callTool({
     name: "edit_note",
@@ -392,6 +394,54 @@ test("mcp e2e: persisted discovery, read, edit, metadata, and lifecycle flow wor
   });
   assert.ok(!deleted.isError);
   assert.equal(deleted.structuredContent.deleted, true);
+});
+
+test("mcp e2e: read_note line anchor returns the next same-size line window hint", async (t) => {
+  resetE2EVault();
+  const session = await createMcpClient();
+  t.after(async () => {
+    await session.close();
+  });
+
+  const notePath = "e2e/line-window.md";
+  const created = await session.client.callTool({
+    name: "create_note",
+    arguments: {
+      path: notePath,
+      content: Array.from({ length: 12 }, (_, index) => `line ${index}`).join("\n"),
+    },
+  });
+  assert.ok(!created.isError);
+
+  const read = await session.client.callTool({
+    name: "read_note",
+    arguments: {
+      note: notePath,
+      anchor: {
+        type: "line",
+        startLine: 2,
+        endLine: 4,
+      },
+      maxChars: 500,
+      include: {
+        metadata: false,
+        documentMap: false,
+      },
+    },
+  });
+  assert.ok(!read.isError);
+  assert.equal(read.structuredContent.selection.anchor.type, "line");
+  assert.equal(read.structuredContent.selection.anchor.startLine, 2);
+  assert.equal(read.structuredContent.selection.anchor.endLine, 4);
+  assert.deepEqual(read.structuredContent.readMoreHint, {
+    note: notePath,
+    anchor: {
+      type: "line",
+      startLine: 5,
+      endLine: 7,
+    },
+    maxChars: 500,
+  });
 });
 
 test("mcp e2e: semantic search bounds legacy payloads loaded from disk", async (t) => {
@@ -634,6 +684,136 @@ test("mcp e2e: read and edit tools accept JSON-string encoded nested arguments",
   assert.equal(edited.structuredContent.status, "applied");
 });
 
+test("mcp e2e: read_note and edit_note bound oversized responses", async (t) => {
+  resetE2EVault();
+  const session = await createMcpClient();
+  t.after(async () => {
+    await session.close();
+  });
+
+  const notePath = "e2e/large-bounds.md";
+  const noteContent = [
+    "---",
+    "tags:",
+    ...Array.from({ length: 30 }, (_, index) => `  - tag-${index}`),
+    `summary: ${"S".repeat(700)}`,
+    `history: ${JSON.stringify(Array.from({ length: 30 }, (_, index) => `entry-${index}`))}`,
+    ...Array.from(
+      { length: 60 },
+      (_, index) => `field${String(index).padStart(2, "0")}: value-${index}`,
+    ),
+    "---",
+    "",
+    "# Large Bounds",
+    "",
+    ...Array.from(
+      { length: 120 },
+      (_, index) => `## Section ${index}\npayload ${index} ^block-${index}\n`,
+    ),
+  ].join("\n");
+
+  const created = await session.client.callTool({
+    name: "create_note",
+    arguments: {
+      path: notePath,
+      content: noteContent,
+    },
+  });
+  assert.ok(!created.isError);
+
+  const read = await session.client.callTool({
+    name: "read_note",
+    arguments: {
+      note: notePath,
+      maxChars: 250,
+      include: {
+        metadata: true,
+        documentMap: true,
+      },
+    },
+  });
+  assert.ok(!read.isError);
+  assert.equal(read.structuredContent.metadataTruncated, true);
+  assert.equal(read.structuredContent.documentMapTruncated, true);
+  assert.equal(read.structuredContent.content.truncated, true);
+  assert.ok(read.structuredContent.metadata.tags.length <= 25);
+  assert.ok(Object.keys(read.structuredContent.metadata.frontmatter).length <= 50);
+  assert.ok(read.structuredContent.metadata.frontmatter.summary.length <= 500);
+  assert.ok(read.structuredContent.metadata.frontmatter.history.length <= 25);
+  assert.ok(read.structuredContent.documentMap.headings.length <= 100);
+  assert.ok(read.structuredContent.documentMap.blocks.length <= 100);
+  assert.ok(read.structuredContent.documentMap.frontmatterFields.length <= 50);
+  assert.ok(read.content[0].text.length < 4_000);
+  assert.match(read.content[0].text, /availableTargets=editTarget,documentEditTarget/);
+  assert.doesNotMatch(read.content[0].text, /editTarget=/);
+
+  const replacement = ["# Rewritten Large Bounds", "", "A".repeat(700), "B".repeat(700)].join("\n");
+  const edited = await session.client.callTool({
+    name: "edit_note",
+    arguments: {
+      target: read.structuredContent.documentEditTarget,
+      change: {
+        type: "replaceTarget",
+        content: replacement,
+      },
+    },
+  });
+  assert.ok(!edited.isError);
+  assert.equal(edited.structuredContent.status, "applied");
+  assert.ok(edited.structuredContent.preview.before.length <= 500);
+  assert.ok(edited.structuredContent.preview.after.length <= 500);
+  assert.equal(edited.structuredContent.previewMeta.beforeTruncated, true);
+  assert.equal(edited.structuredContent.previewMeta.afterTruncated, true);
+  assert.equal(
+    edited.structuredContent.previewMeta.beforeTotalChars >
+      edited.structuredContent.preview.before.length,
+    true,
+  );
+  assert.equal(edited.structuredContent.previewMeta.afterTotalChars, replacement.length);
+  assert.ok(edited.content[0].text.length < 4_000);
+});
+
+test("mcp e2e: lexical search bounds oversized snippets", async (t) => {
+  resetE2EVault();
+  const session = await createMcpClient();
+  t.after(async () => {
+    await session.close();
+  });
+
+  const notePath = "e2e/long-line-search.md";
+  const created = await session.client.callTool({
+    name: "create_note",
+    arguments: {
+      path: notePath,
+      content: [
+        "# Long Line Search",
+        "",
+        `${"prefix ".repeat(120)}needle ${"suffix ".repeat(120)}`,
+      ].join("\n"),
+    },
+  });
+  assert.ok(!created.isError);
+
+  const lexical = await session.client.callTool({
+    name: "search_notes",
+    arguments: {
+      query: "needle",
+      include: {
+        snippet: true,
+        matchLocations: true,
+        tags: false,
+        frontmatterKeys: [],
+      },
+    },
+  });
+
+  assert.ok(!lexical.isError);
+  assert.equal(lexical.structuredContent.returned, 1);
+  assert.ok(lexical.structuredContent.results[0].snippet.text.length <= 500);
+  assert.ok(lexical.content[0].text.length < 4_000);
+  assert.doesNotMatch(lexical.content[0].text, /readHint=/);
+});
+
 test("mcp e2e: active context read/edit handoff works against plugin bridge", async (t) => {
   resetE2EVault();
   let context = {
@@ -737,7 +917,8 @@ test("mcp e2e: active context read/edit handoff works against plugin bridge", as
   assert.equal(active.structuredContent.selection, "beta");
   assert.equal(active.structuredContent.contentTruncated, false);
   assert.ok(active.structuredContent.editTargets.selection);
-  assert.match(active.content[0].text, /editTargets=/);
+  assert.match(active.content[0].text, /availableTargets=selection,cursor,document/);
+  assert.doesNotMatch(active.content[0].text, /editTargets=/);
 
   const replacedSelection = await session.client.callTool({
     name: "edit_note",
@@ -863,6 +1044,8 @@ test("mcp e2e: read_active_context bounds large structured payloads", async (t) 
   assert.equal(active.structuredContent.editTargets.selection.currentText, undefined);
   assert.equal(active.structuredContent.editTargets.document.currentText, undefined);
   assert.ok(active.content[0].text.length < 4_000);
+  assert.match(active.content[0].text, /availableTargets=selection,cursor,document/);
+  assert.doesNotMatch(active.content[0].text, /editTargets=/);
 });
 
 test("mcp e2e: move fallback preserves the plugin failure reason when filesystem fallback succeeds", async (t) => {

@@ -286,6 +286,7 @@ export const readNoteOutputSchema = z.object({
       frontmatter: z.record(z.unknown()),
     })
     .nullable(),
+  metadataTruncated: z.boolean().optional(),
   documentMap: z
     .object({
       headings: z.array(
@@ -306,6 +307,7 @@ export const readNoteOutputSchema = z.object({
       frontmatterFields: z.array(z.string()),
     })
     .nullable(),
+  documentMapTruncated: z.boolean().optional(),
   readMoreHint: z
     .object({
       note: notePathSchema,
@@ -375,6 +377,14 @@ export const editNoteOutputSchema = z.object({
     before: z.string(),
     after: z.string(),
   }),
+  previewMeta: z
+    .object({
+      beforeTotalChars: z.number().int().min(0),
+      afterTotalChars: z.number().int().min(0),
+      beforeTruncated: z.boolean(),
+      afterTruncated: z.boolean(),
+    })
+    .optional(),
   degraded: z.boolean(),
   degradedReason: z.string().nullable(),
   readBack: z.object({

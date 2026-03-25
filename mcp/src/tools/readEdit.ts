@@ -14,6 +14,12 @@ import {
   resolveNoteSelection,
 } from "../domain/noteDocument";
 import type { NoteService } from "../domain/noteService";
+import {
+  boundStructuredValue,
+  RESPONSE_ARRAY_MAX_ITEMS,
+  RESPONSE_EXCERPT_MAX_CHARS,
+  truncateText,
+} from "../domain/responseBounds";
 import { errorResult, okResult } from "../domain/toolResult";
 import {
   editNoteInputSchema,
@@ -37,16 +43,6 @@ function extractTags(metadata: Record<string, unknown>): string[] {
     return [rawTags];
   }
   return [];
-}
-
-function truncateText(text: string, maxChars: number): { text: string; truncated: boolean } {
-  if (text.length <= maxChars) {
-    return { text, truncated: false };
-  }
-  return {
-    text: `${text.slice(0, Math.max(maxChars - 1, 0))}…`,
-    truncated: true,
-  };
 }
 
 function toMutationSummary(status: "applied" | "noOp", degraded: boolean): string {
@@ -79,10 +75,109 @@ function anchorToText(anchor: {
 
 function previewText(text: string, maxChars = 240): string {
   const normalized = text.replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxChars) {
-    return normalized;
+  return truncateText(normalized, maxChars).text;
+}
+
+function boundTags(tags: string[]): { tags: string[]; truncated: boolean } {
+  const bounded = tags
+    .slice(0, RESPONSE_ARRAY_MAX_ITEMS)
+    .map((tag) => truncateText(tag, RESPONSE_EXCERPT_MAX_CHARS));
+  return {
+    tags: bounded.map((tag) => tag.text),
+    truncated: tags.length > RESPONSE_ARRAY_MAX_ITEMS || bounded.some((tag) => tag.truncated),
+  };
+}
+
+function boundFrontmatter(frontmatter: Record<string, unknown>): {
+  frontmatter: Record<string, unknown>;
+  truncated: boolean;
+} {
+  const bounded = boundStructuredValue(frontmatter);
+  return {
+    frontmatter:
+      bounded.value && typeof bounded.value === "object" && !Array.isArray(bounded.value)
+        ? (bounded.value as Record<string, unknown>)
+        : {},
+    truncated: bounded.truncated,
+  };
+}
+
+function boundDocumentMap(documentMap: ReturnType<typeof buildDocumentMap> | null): {
+  documentMap: ReturnType<typeof buildDocumentMap> | null;
+  truncated: boolean;
+} {
+  if (!documentMap) {
+    return { documentMap: null, truncated: false };
   }
-  return `${normalized.slice(0, Math.max(maxChars - 1, 0))}…`;
+
+  const headings = documentMap.headings.slice(0, 100);
+  const blocks = documentMap.blocks.slice(0, 100);
+  const frontmatterFields = documentMap.frontmatterFields.slice(0, 50);
+
+  return {
+    documentMap: {
+      headings,
+      blocks,
+      frontmatterFields,
+    },
+    truncated:
+      documentMap.headings.length > headings.length ||
+      documentMap.blocks.length > blocks.length ||
+      documentMap.frontmatterFields.length > frontmatterFields.length,
+  };
+}
+
+function buildMutationPreview(beforeText: string, afterText: string) {
+  const before = truncateText(beforeText, RESPONSE_EXCERPT_MAX_CHARS);
+  const after = truncateText(afterText, RESPONSE_EXCERPT_MAX_CHARS);
+
+  return {
+    preview: {
+      before: before.text,
+      after: after.text,
+    },
+    previewMeta: {
+      beforeTotalChars: before.totalChars,
+      afterTotalChars: after.totalChars,
+      beforeTruncated: before.truncated,
+      afterTruncated: after.truncated,
+    },
+  };
+}
+
+function buildReadMoreHint(
+  note: string,
+  resolved: ReturnType<typeof resolveNoteSelection>,
+  maxChars: number,
+  contentTruncated: boolean,
+) {
+  if (resolved.anchor.type === "line") {
+    const windowSize = resolved.anchor.endLine - resolved.anchor.startLine + 1;
+    const nextStartLine = resolved.anchor.endLine + 1;
+    if (nextStartLine > resolved.totalLines - 1) {
+      return null;
+    }
+
+    return {
+      note,
+      anchor: {
+        type: "line" as const,
+        startLine: nextStartLine,
+        endLine: Math.min(nextStartLine + windowSize - 1, resolved.totalLines - 1),
+      },
+      maxChars,
+    };
+  }
+
+  if (!contentTruncated) {
+    return null;
+  }
+
+  return {
+    note,
+    anchor: resolved.anchor,
+    maxChars: Math.min(maxChars * 2, 20_000),
+  };
 }
 
 export function registerReadEditTools(
@@ -107,13 +202,19 @@ export function registerReadEditTools(
         const revision = buildRevisionToken(params.note, result.updatedAt, result.size);
         const resolved = resolveNoteSelection(result.content, params.anchor);
         const truncated = truncateText(resolved.text, params.maxChars);
+        const boundedTags = boundTags(extractTags(result.metadata));
+        const boundedFrontmatter = boundFrontmatter(result.metadata);
         const metadata =
           params.include.metadata === false
             ? null
             : {
-                tags: extractTags(result.metadata),
-                frontmatter: result.metadata,
+                tags: boundedTags.tags,
+                frontmatter: boundedFrontmatter.frontmatter,
               };
+        const boundedDocumentMap = boundDocumentMap(
+          params.include.documentMap ? buildDocumentMap(result.content) : null,
+        );
+        const availableTargets = ["editTarget", "documentEditTarget"].join(",");
         const payload = {
           note: {
             path: params.note,
@@ -146,14 +247,18 @@ export function registerReadEditTools(
             charsReturned: truncated.text.length,
           },
           metadata,
-          documentMap: params.include.documentMap ? buildDocumentMap(result.content) : null,
-          readMoreHint: truncated.truncated
-            ? {
-                note: params.note,
-                anchor: resolved.anchor,
-                maxChars: Math.min(params.maxChars * 2, 20_000),
-              }
-            : null,
+          metadataTruncated:
+            params.include.metadata === false
+              ? false
+              : boundedTags.truncated || boundedFrontmatter.truncated,
+          documentMap: boundedDocumentMap.documentMap,
+          documentMapTruncated: boundedDocumentMap.truncated,
+          readMoreHint: buildReadMoreHint(
+            params.note,
+            resolved,
+            params.maxChars,
+            truncated.truncated,
+          ),
           degraded: result.degraded,
           degradedReason: result.degradedReason,
         };
@@ -161,10 +266,11 @@ export function registerReadEditTools(
           `note=${payload.note.path}`,
           `anchor=${anchorToText(payload.selection.anchor)}`,
           `revision=${payload.revision}`,
-          `truncated=${payload.content.truncated}`,
+          `contentTruncated=${payload.content.truncated}`,
+          `metadataTruncated=${payload.metadataTruncated}`,
+          `documentMapTruncated=${payload.documentMapTruncated}`,
+          `availableTargets=${availableTargets}`,
           `content="${previewText(payload.content.text)}"`,
-          `editTarget=${JSON.stringify(payload.editTarget)}`,
-          `documentEditTarget=${JSON.stringify(payload.documentEditTarget)}`,
         ].join("\n");
         return okResult(`Read note (${result.degraded ? "degraded" : "normal"})`, payload, detail);
       } catch (error) {
@@ -275,7 +381,6 @@ export function registerReadEditTools(
             `contentTruncated=${payload.contentTruncated}`,
             `content="${previewText(payload.content, 120)}"`,
             `availableTargets=${availableTargets.join(",") || "none"}`,
-            `editTargets=${JSON.stringify(payload.editTargets)}`,
           ].join("\n"),
         );
       } catch (error) {
@@ -311,6 +416,7 @@ export function registerReadEditTools(
           const changed = applyEditChange(resolved.text, params.change);
 
           if (changed.nextText === resolved.text) {
+            const mutationPreview = buildMutationPreview(resolved.text, changed.nextText);
             const payload = {
               status: "noOp" as const,
               target: {
@@ -320,7 +426,7 @@ export function registerReadEditTools(
               },
               revisionBefore,
               revisionAfter: revisionBefore,
-              preview: { before: resolved.text, after: changed.nextText },
+              ...mutationPreview,
               degraded: current.degraded,
               degradedReason: current.degradedReason,
               readBack: {
@@ -330,13 +436,14 @@ export function registerReadEditTools(
               warnings: changed.warnings,
             };
             return okResult(
-              "No edit applied (normal)",
+              toMutationSummary("noOp", current.degraded),
               payload,
               [
                 `status=${payload.status}`,
                 `target.note=${payload.target.note}`,
                 `target.anchor=${anchorToText(payload.target.anchor)}`,
                 `preview.before="${previewText(payload.preview.before)}"`,
+                `preview.beforeTruncated=${payload.previewMeta.beforeTruncated}`,
               ].join("\n"),
             );
           }
@@ -349,6 +456,7 @@ export function registerReadEditTools(
             writeResult.size,
           );
 
+          const mutationPreview = buildMutationPreview(resolved.text, changed.nextText);
           const payload = {
             status: "applied" as const,
             target: {
@@ -358,7 +466,7 @@ export function registerReadEditTools(
             },
             revisionBefore,
             revisionAfter,
-            preview: { before: resolved.text, after: changed.nextText },
+            ...mutationPreview,
             degraded: writeResult.degraded,
             degradedReason: writeResult.degradedReason,
             readBack: {
@@ -376,6 +484,7 @@ export function registerReadEditTools(
               `target.anchor=${anchorToText(payload.target.anchor)}`,
               `preview.before="${previewText(payload.preview.before)}"`,
               `preview.after="${previewText(payload.preview.after)}"`,
+              `preview.afterTruncated=${payload.previewMeta.afterTruncated}`,
             ].join("\n"),
           );
         }
@@ -401,6 +510,7 @@ export function registerReadEditTools(
             insertedText,
             params.target.anchor.position,
           );
+          const mutationPreview = buildMutationPreview("", insertedText);
           const payload = {
             status: "applied" as const,
             target: {
@@ -410,7 +520,7 @@ export function registerReadEditTools(
             },
             revisionBefore: null,
             revisionAfter: null,
-            preview: { before: "", after: insertedText },
+            ...mutationPreview,
             degraded: insertResult.degraded,
             degradedReason: insertResult.degradedReason,
             readBack: {
@@ -427,6 +537,7 @@ export function registerReadEditTools(
               `target.activeFile=${payload.target.activeFile ?? "null"}`,
               `target.anchor=${payload.target.anchor.type}`,
               `preview.after="${previewText(payload.preview.after)}"`,
+              `preview.afterTruncated=${payload.previewMeta.afterTruncated}`,
             ].join("\n"),
           );
         }
@@ -436,6 +547,7 @@ export function registerReadEditTools(
         const changed = applyEditChange(resolved.text, params.change);
 
         if (changed.nextText === resolved.text) {
+          const mutationPreview = buildMutationPreview(resolved.text, changed.nextText);
           const payload = {
             status: "noOp" as const,
             target: {
@@ -445,7 +557,7 @@ export function registerReadEditTools(
             },
             revisionBefore: null,
             revisionAfter: null,
-            preview: { before: resolved.text, after: changed.nextText },
+            ...mutationPreview,
             degraded: current.degraded,
             degradedReason: current.degradedReason,
             readBack: {
@@ -462,6 +574,7 @@ export function registerReadEditTools(
               `target.activeFile=${payload.target.activeFile ?? "null"}`,
               `target.anchor=${payload.target.anchor.type}`,
               `preview.before="${previewText(payload.preview.before)}"`,
+              `preview.beforeTruncated=${payload.previewMeta.beforeTruncated}`,
             ].join("\n"),
           );
         }
@@ -471,6 +584,7 @@ export function registerReadEditTools(
         }
 
         const replaceResult = await editorService.replaceRange(changed.nextText, resolved.range);
+        const mutationPreview = buildMutationPreview(resolved.text, changed.nextText);
         const payload = {
           status: "applied" as const,
           target: {
@@ -480,7 +594,7 @@ export function registerReadEditTools(
           },
           revisionBefore: null,
           revisionAfter: null,
-          preview: { before: resolved.text, after: changed.nextText },
+          ...mutationPreview,
           degraded: replaceResult.degraded,
           degradedReason: replaceResult.degradedReason,
           readBack: {
@@ -498,6 +612,7 @@ export function registerReadEditTools(
             `target.anchor=${payload.target.anchor.type}`,
             `preview.before="${previewText(payload.preview.before)}"`,
             `preview.after="${previewText(payload.preview.after)}"`,
+            `preview.afterTruncated=${payload.previewMeta.afterTruncated}`,
           ].join("\n"),
         );
       } catch (error) {

@@ -1081,6 +1081,76 @@ var IndexingQueue = class {
 
 // src/domain/noteDocument.ts
 import path4 from "path";
+
+// src/domain/responseBounds.ts
+var TOOL_TEXT_MAX_CHARS = 4e3;
+var RESPONSE_EXCERPT_MAX_CHARS = 500;
+var RESPONSE_ARRAY_MAX_ITEMS = 25;
+var RESPONSE_OBJECT_MAX_KEYS = 50;
+function truncateText(text, maxChars) {
+  if (text.length <= maxChars) {
+    return { text, truncated: false, totalChars: text.length };
+  }
+  return {
+    text: `${text.slice(0, Math.max(maxChars - 1, 0))}\u2026`,
+    truncated: true,
+    totalChars: text.length
+  };
+}
+function boundStructuredValue(value, {
+  maxStringChars = RESPONSE_EXCERPT_MAX_CHARS,
+  maxArrayItems = RESPONSE_ARRAY_MAX_ITEMS,
+  maxObjectKeys = RESPONSE_OBJECT_MAX_KEYS
+} = {}) {
+  if (typeof value === "string") {
+    const truncated = truncateText(value, maxStringChars);
+    return { value: truncated.text, truncated: truncated.truncated };
+  }
+  if (value === null || value === void 0 || typeof value === "number" || typeof value === "boolean") {
+    return { value, truncated: false };
+  }
+  if (typeof value === "bigint") {
+    return { value: value.toString(), truncated: false };
+  }
+  if (Array.isArray(value)) {
+    const items = value.slice(0, maxArrayItems);
+    let truncated = value.length > items.length;
+    const boundedItems = items.map((item) => {
+      const bounded = boundStructuredValue(item, {
+        maxStringChars,
+        maxArrayItems,
+        maxObjectKeys
+      });
+      if (bounded.truncated) {
+        truncated = true;
+      }
+      return bounded.value;
+    });
+    return { value: boundedItems, truncated };
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value);
+    const limitedEntries = entries.slice(0, maxObjectKeys);
+    let truncated = entries.length > limitedEntries.length;
+    const boundedObject = Object.fromEntries(
+      limitedEntries.map(([key, nestedValue]) => {
+        const bounded = boundStructuredValue(nestedValue, {
+          maxStringChars,
+          maxArrayItems,
+          maxObjectKeys
+        });
+        if (bounded.truncated) {
+          truncated = true;
+        }
+        return [key, bounded.value];
+      })
+    );
+    return { value: boundedObject, truncated };
+  }
+  return { value: null, truncated: true };
+}
+
+// src/domain/noteDocument.ts
 var SEMANTIC_CHUNK_MAX_CHARS = 1200;
 function normalizeHeading(title) {
   return title.trim().replace(/\s+/g, " ");
@@ -1408,8 +1478,12 @@ function findSnippetForQuery(content, query) {
   }
   const windowStart = Math.max(matchIndex - 1, 0);
   const windowEnd = Math.min(matchIndex + 1, lines.length - 1);
+  const snippet = truncateText(
+    lines.slice(windowStart, windowEnd + 1).join("\n").trim(),
+    RESPONSE_EXCERPT_MAX_CHARS
+  );
   return {
-    text: lines.slice(windowStart, windowEnd + 1).join("\n").trim(),
+    text: snippet.text,
     startLine: windowStart,
     endLine: windowEnd
   };
@@ -2433,18 +2507,16 @@ function buildStructuredPreview(structuredContent) {
   if (!serialized) {
     return null;
   }
-  const maxChars = 4e3;
-  if (serialized.length <= maxChars) {
-    return serialized;
-  }
-  return `${serialized.slice(0, maxChars)}
-\u2026`;
+  return truncateText(serialized, TOOL_TEXT_MAX_CHARS).text;
 }
 function okResult(summary, structuredContent, detailText) {
   const preview = detailText ?? buildStructuredPreview(structuredContent);
-  const text = preview ? `${summary}
+  const text = truncateText(
+    preview ? `${summary}
 
-${preview}` : summary;
+${preview}` : summary,
+    TOOL_TEXT_MAX_CHARS
+  ).text;
   return {
     content: [{ type: "text", text }],
     structuredContent
@@ -2724,6 +2796,7 @@ var readNoteOutputSchema = z5.object({
     tags: z5.array(z5.string()),
     frontmatter: z5.record(z5.unknown())
   }).nullable(),
+  metadataTruncated: z5.boolean().optional(),
   documentMap: z5.object({
     headings: z5.array(
       z5.object({
@@ -2742,6 +2815,7 @@ var readNoteOutputSchema = z5.object({
     ),
     frontmatterFields: z5.array(z5.string())
   }).nullable(),
+  documentMapTruncated: z5.boolean().optional(),
   readMoreHint: z5.object({
     note: notePathSchema,
     anchor: noteAnchorSchema,
@@ -2805,6 +2879,12 @@ var editNoteOutputSchema = z5.object({
     before: z5.string(),
     after: z5.string()
   }),
+  previewMeta: z5.object({
+    beforeTotalChars: z5.number().int().min(0),
+    afterTotalChars: z5.number().int().min(0),
+    beforeTruncated: z5.boolean(),
+    afterTruncated: z5.boolean()
+  }).optional(),
   degraded: z5.boolean(),
   degradedReason: z5.string().nullable(),
   readBack: z5.object({
@@ -3146,15 +3226,6 @@ function extractTags(metadata) {
   }
   return [];
 }
-function truncateText(text, maxChars) {
-  if (text.length <= maxChars) {
-    return { text, truncated: false };
-  }
-  return {
-    text: `${text.slice(0, Math.max(maxChars - 1, 0))}\u2026`,
-    truncated: true
-  };
-}
 function toMutationSummary(status, degraded) {
   const mode = degraded ? "degraded" : "normal";
   return status === "noOp" ? `No edit applied (${mode})` : `Edit applied (${mode})`;
@@ -3177,10 +3248,79 @@ function anchorToText(anchor) {
 }
 function previewText(text, maxChars = 240) {
   const normalized = text.replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxChars) {
-    return normalized;
+  return truncateText(normalized, maxChars).text;
+}
+function boundTags(tags) {
+  const bounded = tags.slice(0, RESPONSE_ARRAY_MAX_ITEMS).map((tag) => truncateText(tag, RESPONSE_EXCERPT_MAX_CHARS));
+  return {
+    tags: bounded.map((tag) => tag.text),
+    truncated: tags.length > RESPONSE_ARRAY_MAX_ITEMS || bounded.some((tag) => tag.truncated)
+  };
+}
+function boundFrontmatter(frontmatter) {
+  const bounded = boundStructuredValue(frontmatter);
+  return {
+    frontmatter: bounded.value && typeof bounded.value === "object" && !Array.isArray(bounded.value) ? bounded.value : {},
+    truncated: bounded.truncated
+  };
+}
+function boundDocumentMap(documentMap) {
+  if (!documentMap) {
+    return { documentMap: null, truncated: false };
   }
-  return `${normalized.slice(0, Math.max(maxChars - 1, 0))}\u2026`;
+  const headings = documentMap.headings.slice(0, 100);
+  const blocks = documentMap.blocks.slice(0, 100);
+  const frontmatterFields = documentMap.frontmatterFields.slice(0, 50);
+  return {
+    documentMap: {
+      headings,
+      blocks,
+      frontmatterFields
+    },
+    truncated: documentMap.headings.length > headings.length || documentMap.blocks.length > blocks.length || documentMap.frontmatterFields.length > frontmatterFields.length
+  };
+}
+function buildMutationPreview(beforeText, afterText) {
+  const before = truncateText(beforeText, RESPONSE_EXCERPT_MAX_CHARS);
+  const after = truncateText(afterText, RESPONSE_EXCERPT_MAX_CHARS);
+  return {
+    preview: {
+      before: before.text,
+      after: after.text
+    },
+    previewMeta: {
+      beforeTotalChars: before.totalChars,
+      afterTotalChars: after.totalChars,
+      beforeTruncated: before.truncated,
+      afterTruncated: after.truncated
+    }
+  };
+}
+function buildReadMoreHint(note, resolved, maxChars, contentTruncated) {
+  if (resolved.anchor.type === "line") {
+    const windowSize = resolved.anchor.endLine - resolved.anchor.startLine + 1;
+    const nextStartLine = resolved.anchor.endLine + 1;
+    if (nextStartLine > resolved.totalLines - 1) {
+      return null;
+    }
+    return {
+      note,
+      anchor: {
+        type: "line",
+        startLine: nextStartLine,
+        endLine: Math.min(nextStartLine + windowSize - 1, resolved.totalLines - 1)
+      },
+      maxChars
+    };
+  }
+  if (!contentTruncated) {
+    return null;
+  }
+  return {
+    note,
+    anchor: resolved.anchor,
+    maxChars: Math.min(maxChars * 2, 2e4)
+  };
 }
 function registerReadEditTools(server, noteService, editorService) {
   server.registerTool(
@@ -3199,10 +3339,16 @@ function registerReadEditTools(server, noteService, editorService) {
         const revision = buildRevisionToken(params.note, result.updatedAt, result.size);
         const resolved = resolveNoteSelection(result.content, params.anchor);
         const truncated = truncateText(resolved.text, params.maxChars);
+        const boundedTags = boundTags(extractTags(result.metadata));
+        const boundedFrontmatter = boundFrontmatter(result.metadata);
         const metadata = params.include.metadata === false ? null : {
-          tags: extractTags(result.metadata),
-          frontmatter: result.metadata
+          tags: boundedTags.tags,
+          frontmatter: boundedFrontmatter.frontmatter
         };
+        const boundedDocumentMap = boundDocumentMap(
+          params.include.documentMap ? buildDocumentMap(result.content) : null
+        );
+        const availableTargets = ["editTarget", "documentEditTarget"].join(",");
         const payload = {
           note: {
             path: params.note,
@@ -3235,12 +3381,15 @@ function registerReadEditTools(server, noteService, editorService) {
             charsReturned: truncated.text.length
           },
           metadata,
-          documentMap: params.include.documentMap ? buildDocumentMap(result.content) : null,
-          readMoreHint: truncated.truncated ? {
-            note: params.note,
-            anchor: resolved.anchor,
-            maxChars: Math.min(params.maxChars * 2, 2e4)
-          } : null,
+          metadataTruncated: params.include.metadata === false ? false : boundedTags.truncated || boundedFrontmatter.truncated,
+          documentMap: boundedDocumentMap.documentMap,
+          documentMapTruncated: boundedDocumentMap.truncated,
+          readMoreHint: buildReadMoreHint(
+            params.note,
+            resolved,
+            params.maxChars,
+            truncated.truncated
+          ),
           degraded: result.degraded,
           degradedReason: result.degradedReason
         };
@@ -3248,10 +3397,11 @@ function registerReadEditTools(server, noteService, editorService) {
           `note=${payload.note.path}`,
           `anchor=${anchorToText(payload.selection.anchor)}`,
           `revision=${payload.revision}`,
-          `truncated=${payload.content.truncated}`,
-          `content="${previewText(payload.content.text)}"`,
-          `editTarget=${JSON.stringify(payload.editTarget)}`,
-          `documentEditTarget=${JSON.stringify(payload.documentEditTarget)}`
+          `contentTruncated=${payload.content.truncated}`,
+          `metadataTruncated=${payload.metadataTruncated}`,
+          `documentMapTruncated=${payload.documentMapTruncated}`,
+          `availableTargets=${availableTargets}`,
+          `content="${previewText(payload.content.text)}"`
         ].join("\n");
         return okResult(`Read note (${result.degraded ? "degraded" : "normal"})`, payload, detail);
       } catch (error) {
@@ -3338,8 +3488,7 @@ function registerReadEditTools(server, noteService, editorService) {
             `selectionTruncated=${payload.selectionTruncated}`,
             `contentTruncated=${payload.contentTruncated}`,
             `content="${previewText(payload.content, 120)}"`,
-            `availableTargets=${availableTargets.join(",") || "none"}`,
-            `editTargets=${JSON.stringify(payload.editTargets)}`
+            `availableTargets=${availableTargets.join(",") || "none"}`
           ].join("\n")
         );
       } catch (error) {
@@ -3369,6 +3518,7 @@ function registerReadEditTools(server, noteService, editorService) {
           compareExpectedText(resolved2.text, params.target.currentText);
           const changed2 = applyEditChange(resolved2.text, params.change);
           if (changed2.nextText === resolved2.text) {
+            const mutationPreview3 = buildMutationPreview(resolved2.text, changed2.nextText);
             const payload3 = {
               status: "noOp",
               target: {
@@ -3378,7 +3528,7 @@ function registerReadEditTools(server, noteService, editorService) {
               },
               revisionBefore,
               revisionAfter: revisionBefore,
-              preview: { before: resolved2.text, after: changed2.nextText },
+              ...mutationPreview3,
               degraded: current2.degraded,
               degradedReason: current2.degradedReason,
               readBack: {
@@ -3388,13 +3538,14 @@ function registerReadEditTools(server, noteService, editorService) {
               warnings: changed2.warnings
             };
             return okResult(
-              "No edit applied (normal)",
+              toMutationSummary("noOp", current2.degraded),
               payload3,
               [
                 `status=${payload3.status}`,
                 `target.note=${payload3.target.note}`,
                 `target.anchor=${anchorToText(payload3.target.anchor)}`,
-                `preview.before="${previewText(payload3.preview.before)}"`
+                `preview.before="${previewText(payload3.preview.before)}"`,
+                `preview.beforeTruncated=${payload3.previewMeta.beforeTruncated}`
               ].join("\n")
             );
           }
@@ -3405,6 +3556,7 @@ function registerReadEditTools(server, noteService, editorService) {
             writeResult.updatedAt,
             writeResult.size
           );
+          const mutationPreview2 = buildMutationPreview(resolved2.text, changed2.nextText);
           const payload2 = {
             status: "applied",
             target: {
@@ -3414,7 +3566,7 @@ function registerReadEditTools(server, noteService, editorService) {
             },
             revisionBefore,
             revisionAfter,
-            preview: { before: resolved2.text, after: changed2.nextText },
+            ...mutationPreview2,
             degraded: writeResult.degraded,
             degradedReason: writeResult.degradedReason,
             readBack: {
@@ -3431,7 +3583,8 @@ function registerReadEditTools(server, noteService, editorService) {
               `target.note=${payload2.target.note}`,
               `target.anchor=${anchorToText(payload2.target.anchor)}`,
               `preview.before="${previewText(payload2.preview.before)}"`,
-              `preview.after="${previewText(payload2.preview.after)}"`
+              `preview.after="${previewText(payload2.preview.after)}"`,
+              `preview.afterTruncated=${payload2.previewMeta.afterTruncated}`
             ].join("\n")
           );
         }
@@ -3451,6 +3604,7 @@ function registerReadEditTools(server, noteService, editorService) {
             insertedText,
             params.target.anchor.position
           );
+          const mutationPreview2 = buildMutationPreview("", insertedText);
           const payload2 = {
             status: "applied",
             target: {
@@ -3460,7 +3614,7 @@ function registerReadEditTools(server, noteService, editorService) {
             },
             revisionBefore: null,
             revisionAfter: null,
-            preview: { before: "", after: insertedText },
+            ...mutationPreview2,
             degraded: insertResult.degraded,
             degradedReason: insertResult.degradedReason,
             readBack: {
@@ -3476,7 +3630,8 @@ function registerReadEditTools(server, noteService, editorService) {
               `status=${payload2.status}`,
               `target.activeFile=${payload2.target.activeFile ?? "null"}`,
               `target.anchor=${payload2.target.anchor.type}`,
-              `preview.after="${previewText(payload2.preview.after)}"`
+              `preview.after="${previewText(payload2.preview.after)}"`,
+              `preview.afterTruncated=${payload2.previewMeta.afterTruncated}`
             ].join("\n")
           );
         }
@@ -3484,6 +3639,7 @@ function registerReadEditTools(server, noteService, editorService) {
         compareExpectedText(resolved.text, params.target.currentText);
         const changed = applyEditChange(resolved.text, params.change);
         if (changed.nextText === resolved.text) {
+          const mutationPreview2 = buildMutationPreview(resolved.text, changed.nextText);
           const payload2 = {
             status: "noOp",
             target: {
@@ -3493,7 +3649,7 @@ function registerReadEditTools(server, noteService, editorService) {
             },
             revisionBefore: null,
             revisionAfter: null,
-            preview: { before: resolved.text, after: changed.nextText },
+            ...mutationPreview2,
             degraded: current.degraded,
             degradedReason: current.degradedReason,
             readBack: {
@@ -3509,7 +3665,8 @@ function registerReadEditTools(server, noteService, editorService) {
               `status=${payload2.status}`,
               `target.activeFile=${payload2.target.activeFile ?? "null"}`,
               `target.anchor=${payload2.target.anchor.type}`,
-              `preview.before="${previewText(payload2.preview.before)}"`
+              `preview.before="${previewText(payload2.preview.before)}"`,
+              `preview.beforeTruncated=${payload2.previewMeta.beforeTruncated}`
             ].join("\n")
           );
         }
@@ -3517,6 +3674,7 @@ function registerReadEditTools(server, noteService, editorService) {
           throw new DomainError("VALIDATION", "Resolved active target does not include a range");
         }
         const replaceResult = await editorService.replaceRange(changed.nextText, resolved.range);
+        const mutationPreview = buildMutationPreview(resolved.text, changed.nextText);
         const payload = {
           status: "applied",
           target: {
@@ -3526,7 +3684,7 @@ function registerReadEditTools(server, noteService, editorService) {
           },
           revisionBefore: null,
           revisionAfter: null,
-          preview: { before: resolved.text, after: changed.nextText },
+          ...mutationPreview,
           degraded: replaceResult.degraded,
           degradedReason: replaceResult.degradedReason,
           readBack: {
@@ -3543,7 +3701,8 @@ function registerReadEditTools(server, noteService, editorService) {
             `target.activeFile=${payload.target.activeFile ?? "null"}`,
             `target.anchor=${payload.target.anchor.type}`,
             `preview.before="${previewText(payload.preview.before)}"`,
-            `preview.after="${previewText(payload.preview.after)}"`
+            `preview.after="${previewText(payload.preview.after)}"`,
+            `preview.afterTruncated=${payload.previewMeta.afterTruncated}`
           ].join("\n")
         );
       } catch (error) {
@@ -3567,6 +3726,13 @@ function extractTags2(metadata) {
     return [rawTags];
   }
   return [];
+}
+function boundTags2(tags) {
+  return tags.slice(0, RESPONSE_ARRAY_MAX_ITEMS).map((tag) => truncateText(tag, RESPONSE_EXCERPT_MAX_CHARS).text);
+}
+function previewText2(text, maxChars = 120) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  return truncateText(normalized, maxChars).text;
 }
 function buildGlobRegex(pattern) {
   const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*\*/g, "\xA7\xA7DOUBLESTAR\xA7\xA7").replace(/\*/g, "[^/]*").replace(/§§DOUBLESTAR§§/g, ".*");
@@ -3681,7 +3847,7 @@ function registerSearchTools(server, _noteService, semanticService) {
           nextCursor: hasMore && results.length > 0 ? encodeCursor2(results[results.length - 1].path) : null,
           results: results.map((result) => {
             const selectedFrontmatter = params.include.frontmatterKeys.length > 0 ? Object.fromEntries(
-              params.include.frontmatterKeys.filter((key) => key in result.metadata).map((key) => [key, result.metadata[key]])
+              params.include.frontmatterKeys.filter((key) => key in result.metadata).map((key) => [key, boundStructuredValue(result.metadata[key]).value])
             ) : void 0;
             return {
               note: {
@@ -3702,7 +3868,7 @@ function registerSearchTools(server, _noteService, semanticService) {
                 endLine: result.snippet.endLine
               } : null,
               metadata: params.include.tags || selectedFrontmatter ? {
-                ...params.include.tags ? { tags: extractTags2(result.metadata) } : {},
+                ...params.include.tags ? { tags: boundTags2(extractTags2(result.metadata)) } : {},
                 ...selectedFrontmatter ? { frontmatter: selectedFrontmatter } : {}
               } : null,
               readHint: {
@@ -3719,8 +3885,9 @@ function registerSearchTools(server, _noteService, semanticService) {
         const detailLines = [
           `returned=${payload.returned} total=${payload.totalMatches} sort=${payload.sort} hasMore=${payload.hasMore}`,
           ...payload.results.slice(0, 10).map((result, index) => {
-            const snippet = result.snippet?.text.replace(/\s+/g, " ").trim();
-            return `${index + 1}. ${result.note.path} score=${result.score} fields=${result.matchedFields.join(",") || "none"}${snippet ? ` snippet="${snippet}"` : ""} readHint=${JSON.stringify(result.readHint)}`;
+            const snippet = result.snippet?.text ? previewText2(result.snippet.text) : null;
+            const lineHint = result.bestAnchor ? `${result.bestAnchor.startLine}-${result.bestAnchor.endLine}` : "full";
+            return `${index + 1}. ${result.note.path} score=${result.score} fields=${result.matchedFields.join(",") || "none"} lines=${lineHint}${snippet ? ` snippet="${snippet}"` : ""}`;
           })
         ];
         return okResult(`Found ${results.length} matching notes`, payload, detailLines.join("\n"));
@@ -3784,7 +3951,7 @@ function registerSearchTools(server, _noteService, semanticService) {
           results: filtered.map((match, index) => {
             const metadata = readNote(match.path)?.metadata ?? {};
             const selectedFrontmatter = params.include.frontmatterKeys.length > 0 ? Object.fromEntries(
-              params.include.frontmatterKeys.filter((key) => key in metadata).map((key) => [key, metadata[key]])
+              params.include.frontmatterKeys.filter((key) => key in metadata).map((key) => [key, boundStructuredValue(metadata[key]).value])
             ) : void 0;
             const noteContent = params.include.neighboringLines > 0 ? readNote(match.path)?.content : null;
             let chunkText = match.text;
@@ -3819,7 +3986,7 @@ function registerSearchTools(server, _noteService, semanticService) {
                 endLine: match.endLine
               },
               metadata: params.include.tags || selectedFrontmatter ? {
-                ...params.include.tags ? { tags: extractTags2(metadata) } : {},
+                ...params.include.tags ? { tags: boundTags2(extractTags2(metadata)) } : {},
                 ...selectedFrontmatter ? { frontmatter: selectedFrontmatter } : {}
               } : null,
               readHint: {
@@ -3836,8 +4003,8 @@ function registerSearchTools(server, _noteService, semanticService) {
         const detailLines = [
           `returned=${payload.returned} indexedNotes=${payload.indexStatus.indexedNoteCount} indexedChunks=${payload.indexStatus.indexedChunkCount} pending=${payload.indexStatus.pendingCount}`,
           ...payload.results.slice(0, 10).map((result) => {
-            const excerpt = result.chunk.text.replace(/\s+/g, " ").trim();
-            return `${result.rank}. ${result.note.path} score=${result.score.toFixed(3)} lines=${result.anchor.startLine}-${result.anchor.endLine} excerpt="${excerpt}" readHint=${JSON.stringify(result.readHint)}`;
+            const excerpt = previewText2(result.chunk.text);
+            return `${result.rank}. ${result.note.path} score=${result.score.toFixed(3)} lines=${result.anchor.startLine}-${result.anchor.endLine} excerpt="${excerpt}"`;
           })
         ];
         return okResult(

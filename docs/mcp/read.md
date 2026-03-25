@@ -81,6 +81,24 @@ Read part or all of a persisted Obsidian note and return a follow-up edit target
 }
 ```
 
+line window example:
+
+```json
+{
+  "note": "Projects/Alpha/Retro.md",
+  "anchor": {
+    "type": "line",
+    "startLine": 120,
+    "endLine": 180
+  },
+  "maxChars": 6000,
+  "include": {
+    "metadata": false,
+    "documentMap": false
+  }
+}
+```
+
 **Anchor Types**
 
 - `full`
@@ -90,6 +108,8 @@ Read part or all of a persisted Obsidian note and return a follow-up edit target
 - `line`
 
 `block` は explicit block ref (`^block-id`) のみ対応します。
+
+`line` は persisted note を行範囲で windowing しながら読むための anchor です。長い仕様書やログを順番に読むときは、`line` を使うのが最も素直です。
 
 **Output**
 
@@ -123,7 +143,9 @@ Read part or all of a persisted Obsidian note and return a follow-up edit target
       "status": "done"
     }
   },
+  "metadataTruncated": false,
   "documentMap": null,
+  "documentMapTruncated": false,
   "readMoreHint": null,
   "editTarget": {
     "source": "note",
@@ -148,7 +170,25 @@ Read part or all of a persisted Obsidian note and return a follow-up edit target
 }
 ```
 
-`maxChars` で本文が切り詰められた場合、`content.text` は truncated になり、`editTarget.currentText` や `documentEditTarget.currentText` は省略されることがあります。編集の安全性は `revision` と resolved anchor で担保します。
+`maxChars` は本文 `content.text` の上限です。本文が切り詰められた場合、`content.text` は truncated になり、`editTarget.currentText` や `documentEditTarget.currentText` は省略されることがあります。編集の安全性は `revision` と resolved anchor で担保します。
+
+`readMoreHint` の挙動は anchor によって異なります。
+
+- `line` anchor: 次の同じ行数の window を返す。`maxChars` は据え置き
+- それ以外の anchor: 本文が `maxChars` で切り詰められたときだけ、同じ anchor でより大きい `maxChars` を提案する
+
+たとえば `startLine: 120, endLine: 180` で読んだ場合、次が存在すれば `readMoreHint.anchor` は `startLine: 181, endLine: 241` になります。
+
+`metadata.frontmatter` と `documentMap` は別の response-side cap で bounded されます。
+
+- `metadata.frontmatter`: string は 500 chars、array は 25 items、object は 50 keys
+- `documentMap.headings`: 100 entries
+- `documentMap.blocks`: 100 entries
+- `documentMap.frontmatterFields`: 50 entries
+
+これらの cap が発動した場合は `metadataTruncated` / `documentMapTruncated` が `true` になります。
+
+`content[0].text` は compact summary で、raw `editTarget` / `documentEditTarget` JSON や長文本文は含めません。
 
 ## `read_active_context`
 
@@ -232,3 +272,4 @@ Read the active editor buffer and return edit targets for the current active con
 - active editor 側では revision は持たない
 - `selection` / `content` は `maxChars` で bounded される
 - 返却が truncated の場合、対応する `editTargets.*.currentText` は省略されることがある
+- `content[0].text` は compact summary で、raw `editTarget` JSON や本文全文は含めない

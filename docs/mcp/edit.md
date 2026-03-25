@@ -174,6 +174,12 @@ v1 では regex はサポートしません。
     "before": "- old line",
     "after": "- new line"
   },
+  "previewMeta": {
+    "beforeTotalChars": 10,
+    "afterTotalChars": 10,
+    "beforeTruncated": false,
+    "afterTruncated": false
+  },
   "degraded": false,
   "degradedReason": null,
   "readBack": {
@@ -212,6 +218,12 @@ active editor example:
     "before": "selected text",
     "after": "rewritten text"
   },
+  "previewMeta": {
+    "beforeTotalChars": 13,
+    "afterTotalChars": 14,
+    "beforeTruncated": false,
+    "afterTruncated": false
+  },
   "degraded": false,
   "degradedReason": null,
   "readBack": {
@@ -221,6 +233,10 @@ active editor example:
   "warnings": []
 }
 ```
+
+`preview.before` / `preview.after` は confirmation 用の excerpt で、各 500 chars までです。全文は返しません。全文確認が必要なら `readBack` に従って `read_note` / `read_active_context` を再実行します。
+
+`previewMeta` は excerpt の元になった全文長と、excerpt 化で truncation が発生したかを示します。
 
 ## Failure Model
 

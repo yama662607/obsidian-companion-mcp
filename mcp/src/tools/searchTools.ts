@@ -8,6 +8,12 @@ import {
   readTitleFromPath,
 } from "../domain/noteDocument";
 import type { NoteService } from "../domain/noteService";
+import {
+  boundStructuredValue,
+  RESPONSE_ARRAY_MAX_ITEMS,
+  RESPONSE_EXCERPT_MAX_CHARS,
+  truncateText,
+} from "../domain/responseBounds";
 import type { SemanticService } from "../domain/semanticService";
 import { errorResult, okResult } from "../domain/toolResult";
 import * as fallback from "../infra/fallbackStorage";
@@ -31,6 +37,17 @@ function extractTags(metadata: Record<string, unknown>): string[] {
     return [rawTags];
   }
   return [];
+}
+
+function boundTags(tags: string[]): string[] {
+  return tags
+    .slice(0, RESPONSE_ARRAY_MAX_ITEMS)
+    .map((tag) => truncateText(tag, RESPONSE_EXCERPT_MAX_CHARS).text);
+}
+
+function previewText(text: string, maxChars = 120): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  return truncateText(normalized, maxChars).text;
 }
 
 function buildGlobRegex(pattern: string): RegExp {
@@ -206,7 +223,7 @@ export function registerSearchTools(
                 ? Object.fromEntries(
                     params.include.frontmatterKeys
                       .filter((key) => key in result.metadata)
-                      .map((key) => [key, result.metadata[key]]),
+                      .map((key) => [key, boundStructuredValue(result.metadata[key]).value]),
                   )
                 : undefined;
             return {
@@ -235,7 +252,9 @@ export function registerSearchTools(
               metadata:
                 params.include.tags || selectedFrontmatter
                   ? {
-                      ...(params.include.tags ? { tags: extractTags(result.metadata) } : {}),
+                      ...(params.include.tags
+                        ? { tags: boundTags(extractTags(result.metadata)) }
+                        : {}),
                       ...(selectedFrontmatter ? { frontmatter: selectedFrontmatter } : {}),
                     }
                   : null,
@@ -256,8 +275,11 @@ export function registerSearchTools(
         const detailLines = [
           `returned=${payload.returned} total=${payload.totalMatches} sort=${payload.sort} hasMore=${payload.hasMore}`,
           ...payload.results.slice(0, 10).map((result, index) => {
-            const snippet = result.snippet?.text.replace(/\s+/g, " ").trim();
-            return `${index + 1}. ${result.note.path} score=${result.score} fields=${result.matchedFields.join(",") || "none"}${snippet ? ` snippet="${snippet}"` : ""} readHint=${JSON.stringify(result.readHint)}`;
+            const snippet = result.snippet?.text ? previewText(result.snippet.text) : null;
+            const lineHint = result.bestAnchor
+              ? `${result.bestAnchor.startLine}-${result.bestAnchor.endLine}`
+              : "full";
+            return `${index + 1}. ${result.note.path} score=${result.score} fields=${result.matchedFields.join(",") || "none"} lines=${lineHint}${snippet ? ` snippet="${snippet}"` : ""}`;
           }),
         ];
 
@@ -347,7 +369,7 @@ export function registerSearchTools(
                 ? Object.fromEntries(
                     params.include.frontmatterKeys
                       .filter((key) => key in metadata)
-                      .map((key) => [key, metadata[key]]),
+                      .map((key) => [key, boundStructuredValue(metadata[key]).value]),
                   )
                 : undefined;
             const noteContent =
@@ -389,7 +411,7 @@ export function registerSearchTools(
               metadata:
                 params.include.tags || selectedFrontmatter
                   ? {
-                      ...(params.include.tags ? { tags: extractTags(metadata) } : {}),
+                      ...(params.include.tags ? { tags: boundTags(extractTags(metadata)) } : {}),
                       ...(selectedFrontmatter ? { frontmatter: selectedFrontmatter } : {}),
                     }
                   : null,
@@ -408,8 +430,8 @@ export function registerSearchTools(
         const detailLines = [
           `returned=${payload.returned} indexedNotes=${payload.indexStatus.indexedNoteCount} indexedChunks=${payload.indexStatus.indexedChunkCount} pending=${payload.indexStatus.pendingCount}`,
           ...payload.results.slice(0, 10).map((result) => {
-            const excerpt = result.chunk.text.replace(/\s+/g, " ").trim();
-            return `${result.rank}. ${result.note.path} score=${result.score.toFixed(3)} lines=${result.anchor.startLine}-${result.anchor.endLine} excerpt="${excerpt}" readHint=${JSON.stringify(result.readHint)}`;
+            const excerpt = previewText(result.chunk.text);
+            return `${result.rank}. ${result.note.path} score=${result.score.toFixed(3)} lines=${result.anchor.startLine}-${result.anchor.endLine} excerpt="${excerpt}"`;
           }),
         ];
 

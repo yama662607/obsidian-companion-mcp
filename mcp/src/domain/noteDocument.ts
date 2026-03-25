@@ -10,6 +10,7 @@ import {
 } from "../../../shared/editorPositions";
 import { parseFrontmatter } from "../../../shared/frontmatter";
 import { DomainError } from "./errors";
+import { RESPONSE_EXCERPT_MAX_CHARS, truncateText } from "./responseBounds";
 
 export type HeadingAnchor = {
   type: "heading";
@@ -537,11 +538,15 @@ export function findSnippetForQuery(
 
   const windowStart = Math.max(matchIndex - 1, 0);
   const windowEnd = Math.min(matchIndex + 1, lines.length - 1);
-  return {
-    text: lines
+  const snippet = truncateText(
+    lines
       .slice(windowStart, windowEnd + 1)
       .join("\n")
       .trim(),
+    RESPONSE_EXCERPT_MAX_CHARS,
+  );
+  return {
+    text: snippet.text,
     startLine: windowStart,
     endLine: windowEnd,
   };

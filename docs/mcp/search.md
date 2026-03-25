@@ -155,6 +155,9 @@ Find notes by lexical text matching and metadata filters.
 - `query` または `filters` のどちらかは必須
 - `linked_to`、DQL、JsonLogic は v1 では入れない
 - 結果は note-level。詳細本文は `read_note`
+- lexical `snippet.text` は前後行を含む excerpt だが、500 chars で打ち切る
+- `metadata.frontmatter` に含めた値も response-side cap で bounded される
+- `content[0].text` は compact summary で、raw `readHint` JSON や長文 snippet は含めない
 
 ## `semantic_search_notes`
 
@@ -240,6 +243,7 @@ Find conceptually related note passages using a server-side semantic index.
 - 結果は chunk-level
 - note 本文全文は返さない
 - semantic index が未準備なら `index_status` で分かる
+- `content[0].text` は compact summary で、raw `readHint` JSON は含めない
 
 ## `get_semantic_index_status`
 

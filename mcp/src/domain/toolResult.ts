@@ -1,4 +1,5 @@
 import type { DomainError, DomainErrorCode } from "./errors";
+import { TOOL_TEXT_MAX_CHARS, truncateText } from "./responseBounds";
 
 export interface ToolTextContent {
   type: "text";
@@ -73,12 +74,7 @@ function buildStructuredPreview(structuredContent: unknown): string | null {
     return null;
   }
 
-  const maxChars = 4_000;
-  if (serialized.length <= maxChars) {
-    return serialized;
-  }
-
-  return `${serialized.slice(0, maxChars)}\n…`;
+  return truncateText(serialized, TOOL_TEXT_MAX_CHARS).text;
 }
 
 export function okResult<TData>(
@@ -87,7 +83,10 @@ export function okResult<TData>(
   detailText?: string,
 ): ToolSuccess<TData> & McpCompatibleResult {
   const preview = detailText ?? buildStructuredPreview(structuredContent);
-  const text = preview ? `${summary}\n\n${preview}` : summary;
+  const text = truncateText(
+    preview ? `${summary}\n\n${preview}` : summary,
+    TOOL_TEXT_MAX_CHARS,
+  ).text;
 
   return {
     content: [{ type: "text", text }],
