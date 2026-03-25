@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.8
+
+- Expanded `schema://tool-inputs` to include concrete `read_note`, `read_active_context`, and `edit_note` argument shapes
+- Added `edit_note` migration hints so agents prefer structured objects over fragile long JSON strings
+- Included example payloads for `replaceTarget`, `replaceText`, and `insertAtCursor`
+
 ## v0.3.7
 
 - Hardened `read_note` continuation hints with explicit `reason` and `returnedCompleteLines`
