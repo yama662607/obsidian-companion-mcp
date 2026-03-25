@@ -1905,7 +1905,10 @@ var PluginClient = class {
     if (isJsonRpcFailure(json)) {
       throw new Error(json.error.message);
     }
-    return json.result;
+    return {
+      ...json.result,
+      protocolVersion: json.protocolVersion
+    };
   }
   postJson(request) {
     const url = new URL(this.pluginUrl);

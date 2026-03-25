@@ -25,6 +25,7 @@ test("plugin client includes compatibility and degraded-mode transitions", () =>
   const source = fs.readFileSync(sourcePath, "utf8");
 
   assert.match(source, /Protocol version mismatch: expected/);
+  assert.match(source, /protocolVersion:\s*json\.protocolVersion/);
   assert.match(source, /transition\("degraded"/);
   assert.match(source, /retryCount/);
   assert.match(source, /for \(let attempt = 1; attempt <= this\.maxRetries; attempt/);

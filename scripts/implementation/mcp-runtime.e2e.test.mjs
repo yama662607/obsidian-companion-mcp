@@ -15,6 +15,7 @@ const semanticIndexPath = path.join(
   "data",
   "semantic-index.json",
 );
+const CURRENT_PROTOCOL_VERSION = "1.0.0";
 
 function resetE2EVault() {
   fs.rmSync(e2eVaultRoot, { recursive: true, force: true });
@@ -651,7 +652,7 @@ test("mcp e2e: active context read/edit handoff works against plugin bridge", as
       return {
         jsonrpc: "2.0",
         id: request.id,
-        protocolVersion: "0.1.0",
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         result: {
           capabilities: [
             "health.ping",
@@ -674,7 +675,7 @@ test("mcp e2e: active context read/edit handoff works against plugin bridge", as
       return {
         jsonrpc: "2.0",
         id: request.id,
-        protocolVersion: "0.1.0",
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         result: context,
       };
     }
@@ -700,7 +701,7 @@ test("mcp e2e: active context read/edit handoff works against plugin bridge", as
       return {
         jsonrpc: "2.0",
         id: request.id,
-        protocolVersion: "0.1.0",
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         result: context,
       };
     }
@@ -708,7 +709,7 @@ test("mcp e2e: active context read/edit handoff works against plugin bridge", as
     return {
       jsonrpc: "2.0",
       id: request.id,
-      protocolVersion: "0.1.0",
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       error: {
         code: "METHOD_NOT_FOUND",
         message: `Unsupported method: ${request.method}`,
@@ -804,7 +805,7 @@ test("mcp e2e: read_active_context bounds large structured payloads", async (t) 
       return {
         jsonrpc: "2.0",
         id: request.id,
-        protocolVersion: "0.1.0",
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         result: {
           capabilities: ["health.ping", "editor.getContext"],
           availability: "normal",
@@ -818,7 +819,7 @@ test("mcp e2e: read_active_context bounds large structured payloads", async (t) 
       return {
         jsonrpc: "2.0",
         id: request.id,
-        protocolVersion: "0.1.0",
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         result: context,
       };
     }
@@ -826,7 +827,7 @@ test("mcp e2e: read_active_context bounds large structured payloads", async (t) 
     return {
       jsonrpc: "2.0",
       id: request.id,
-      protocolVersion: "0.1.0",
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       error: {
         code: "METHOD_NOT_FOUND",
         message: `Unsupported method: ${request.method}`,
@@ -874,7 +875,7 @@ test("mcp e2e: move fallback preserves the plugin failure reason when filesystem
       return {
         jsonrpc: "2.0",
         id: request.id,
-        protocolVersion: "0.1.0",
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         result: {
           capabilities: ["health.ping", "notes.move"],
           availability: "normal",
@@ -888,7 +889,7 @@ test("mcp e2e: move fallback preserves the plugin failure reason when filesystem
       return {
         jsonrpc: "2.0",
         id: request.id,
-        protocolVersion: "0.1.0",
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         error: {
           code: "NOT_FOUND",
           message: `Note not found: ${request.params.from}`,
@@ -900,7 +901,7 @@ test("mcp e2e: move fallback preserves the plugin failure reason when filesystem
     return {
       jsonrpc: "2.0",
       id: request.id,
-      protocolVersion: "0.1.0",
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       error: {
         code: "METHOD_NOT_FOUND",
         message: `Unsupported method: ${request.method}`,
@@ -994,7 +995,7 @@ test("mcp e2e: persisted note fallbacks preserve specific plugin failure reasons
       return {
         jsonrpc: "2.0",
         id: request.id,
-        protocolVersion: "0.1.0",
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         result: {
           capabilities: [
             "health.ping",
@@ -1019,7 +1020,7 @@ test("mcp e2e: persisted note fallbacks preserve specific plugin failure reasons
       return {
         jsonrpc: "2.0",
         id: request.id,
-        protocolVersion: "0.1.0",
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         error: {
           code: "NOT_FOUND",
           message: `Mock plugin stale state for ${request.method}`,
@@ -1031,7 +1032,7 @@ test("mcp e2e: persisted note fallbacks preserve specific plugin failure reasons
     return {
       jsonrpc: "2.0",
       id: request.id,
-      protocolVersion: "0.1.0",
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       error: {
         code: "METHOD_NOT_FOUND",
         message: `Unsupported method: ${request.method}`,

@@ -166,12 +166,15 @@ export class PluginClient {
       protocolVersion: PROTOCOL_VERSION,
     };
 
-    const json = await this.postJson<HandshakeResult & { protocolVersion?: string }>(request);
+    const json = await this.postJson<HandshakeResult>(request);
     if (isJsonRpcFailure(json)) {
       throw new Error(json.error.message);
     }
 
-    return json.result;
+    return {
+      ...json.result,
+      protocolVersion: json.protocolVersion,
+    };
   }
 
   private postJson<TResult>(request: JsonRpcRequest<unknown>): Promise<JsonRpcResponse<TResult>> {
