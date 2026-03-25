@@ -128,27 +128,99 @@ function boundDocumentMap(documentMap: ReturnType<typeof buildDocumentMap> | nul
 }
 
 function buildMutationPreview(beforeText: string, afterText: string) {
-  const before = truncateText(beforeText, RESPONSE_EXCERPT_MAX_CHARS);
-  const after = truncateText(afterText, RESPONSE_EXCERPT_MAX_CHARS);
+  const beforeLines = beforeText.split("\n");
+  const afterLines = afterText.split("\n");
+  const sharedPrefixLines = Math.min(beforeLines.length, afterLines.length);
+  let prefix = 0;
+  while (prefix < sharedPrefixLines && beforeLines[prefix] === afterLines[prefix]) {
+    prefix += 1;
+  }
+
+  let suffix = 0;
+  while (
+    suffix < beforeLines.length - prefix &&
+    suffix < afterLines.length - prefix &&
+    beforeLines[beforeLines.length - 1 - suffix] === afterLines[afterLines.length - 1 - suffix]
+  ) {
+    suffix += 1;
+  }
+
+  const beforeChangedText = beforeLines.slice(prefix, beforeLines.length - suffix).join("\n");
+  const afterChangedText = afterLines.slice(prefix, afterLines.length - suffix).join("\n");
+  const contextStart = Math.max(0, prefix - 1);
+  const beforeContextEnd = Math.min(beforeLines.length, beforeLines.length - suffix + 1);
+  const afterContextEnd = Math.min(afterLines.length, afterLines.length - suffix + 1);
+  const beforeContextText =
+    beforeChangedText.length > 0
+      ? beforeLines.slice(contextStart, beforeContextEnd).join("\n")
+      : beforeText;
+  const afterContextText =
+    afterChangedText.length > 0
+      ? afterLines.slice(contextStart, afterContextEnd).join("\n")
+      : afterText;
+  const before = truncateText(beforeChangedText || beforeText, RESPONSE_EXCERPT_MAX_CHARS);
+  const after = truncateText(afterChangedText || afterText, RESPONSE_EXCERPT_MAX_CHARS);
+  const contextBefore = truncateText(beforeContextText, RESPONSE_EXCERPT_MAX_CHARS);
+  const contextAfter = truncateText(afterContextText, RESPONSE_EXCERPT_MAX_CHARS);
 
   return {
     preview: {
       before: before.text,
       after: after.text,
+      contextBefore: contextBefore.text,
+      contextAfter: contextAfter.text,
     },
     previewMeta: {
       beforeTotalChars: before.totalChars,
       afterTotalChars: after.totalChars,
       beforeTruncated: before.truncated,
       afterTruncated: after.truncated,
+      changedBeforeTotalChars: before.totalChars,
+      changedAfterTotalChars: after.totalChars,
+      contextBeforeTotalChars: contextBefore.totalChars,
+      contextAfterTotalChars: contextAfter.totalChars,
+      changedBeforeTruncated: before.truncated,
+      changedAfterTruncated: after.truncated,
+      contextBeforeTruncated: contextBefore.truncated,
+      contextAfterTruncated: contextAfter.truncated,
     },
   };
+}
+
+function countCompleteLines(fullText: string, returnedText: string): number {
+  if (returnedText.length === 0) {
+    return 0;
+  }
+
+  let completeLines = 0;
+  let offset = 0;
+
+  while (offset < fullText.length) {
+    const nextNewline = fullText.indexOf("\n", offset);
+    if (nextNewline === -1) {
+      if (returnedText.length >= fullText.length) {
+        completeLines += 1;
+      }
+      break;
+    }
+
+    const lineEndOffset = nextNewline + 1;
+    if (returnedText.length < lineEndOffset) {
+      break;
+    }
+
+    completeLines += 1;
+    offset = lineEndOffset;
+  }
+
+  return completeLines;
 }
 
 function buildReadMoreHint(
   note: string,
   resolved: ReturnType<typeof resolveNoteSelection>,
   maxChars: number,
+  returnedText: string,
   contentTruncated: boolean,
 ) {
   if (resolved.anchor.type === "line") {
@@ -166,6 +238,8 @@ function buildReadMoreHint(
         endLine: Math.min(nextStartLine + windowSize - 1, resolved.totalLines - 1),
       },
       maxChars,
+      reason: "line_window" as const,
+      returnedCompleteLines: windowSize,
     };
   }
 
@@ -173,10 +247,34 @@ function buildReadMoreHint(
     return null;
   }
 
+  const returnedCompleteLines = countCompleteLines(resolved.text, returnedText);
+
+  if (resolved.anchor.type === "full") {
+    const startLine = Math.min(returnedCompleteLines, Math.max(resolved.totalLines - 1, 0));
+    if (startLine > resolved.totalLines - 1) {
+      return null;
+    }
+
+    const windowSize = Math.max(returnedCompleteLines, 1);
+    return {
+      note,
+      anchor: {
+        type: "line" as const,
+        startLine,
+        endLine: Math.min(startLine + windowSize - 1, resolved.totalLines - 1),
+      },
+      maxChars,
+      reason: "full_continuation" as const,
+      returnedCompleteLines,
+    };
+  }
+
   return {
     note,
     anchor: resolved.anchor,
-    maxChars: Math.min(maxChars * 2, 20_000),
+    maxChars: Math.min(maxChars * 2, 100_000),
+    reason: "expand_same_anchor" as const,
+    returnedCompleteLines,
   };
 }
 
@@ -257,6 +355,7 @@ export function registerReadEditTools(
             params.note,
             resolved,
             params.maxChars,
+            truncated.text,
             truncated.truncated,
           ),
           degraded: result.degraded,
@@ -442,8 +541,9 @@ export function registerReadEditTools(
                 `status=${payload.status}`,
                 `target.note=${payload.target.note}`,
                 `target.anchor=${anchorToText(payload.target.anchor)}`,
-                `preview.before="${previewText(payload.preview.before)}"`,
-                `preview.beforeTruncated=${payload.previewMeta.beforeTruncated}`,
+                `changed.before="${previewText(payload.preview.before)}"`,
+                `context.before="${previewText(payload.preview.contextBefore)}"`,
+                `changed.beforeTruncated=${payload.previewMeta.changedBeforeTruncated}`,
               ].join("\n"),
             );
           }
@@ -482,9 +582,11 @@ export function registerReadEditTools(
               `status=${payload.status}`,
               `target.note=${payload.target.note}`,
               `target.anchor=${anchorToText(payload.target.anchor)}`,
-              `preview.before="${previewText(payload.preview.before)}"`,
-              `preview.after="${previewText(payload.preview.after)}"`,
-              `preview.afterTruncated=${payload.previewMeta.afterTruncated}`,
+              `changed.before="${previewText(payload.preview.before)}"`,
+              `changed.after="${previewText(payload.preview.after)}"`,
+              `context.before="${previewText(payload.preview.contextBefore)}"`,
+              `context.after="${previewText(payload.preview.contextAfter)}"`,
+              `changed.afterTruncated=${payload.previewMeta.changedAfterTruncated}`,
             ].join("\n"),
           );
         }
@@ -536,8 +638,9 @@ export function registerReadEditTools(
               `status=${payload.status}`,
               `target.activeFile=${payload.target.activeFile ?? "null"}`,
               `target.anchor=${payload.target.anchor.type}`,
-              `preview.after="${previewText(payload.preview.after)}"`,
-              `preview.afterTruncated=${payload.previewMeta.afterTruncated}`,
+              `changed.after="${previewText(payload.preview.after)}"`,
+              `context.after="${previewText(payload.preview.contextAfter)}"`,
+              `changed.afterTruncated=${payload.previewMeta.changedAfterTruncated}`,
             ].join("\n"),
           );
         }
@@ -573,8 +676,9 @@ export function registerReadEditTools(
               `status=${payload.status}`,
               `target.activeFile=${payload.target.activeFile ?? "null"}`,
               `target.anchor=${payload.target.anchor.type}`,
-              `preview.before="${previewText(payload.preview.before)}"`,
-              `preview.beforeTruncated=${payload.previewMeta.beforeTruncated}`,
+              `changed.before="${previewText(payload.preview.before)}"`,
+              `context.before="${previewText(payload.preview.contextBefore)}"`,
+              `changed.beforeTruncated=${payload.previewMeta.changedBeforeTruncated}`,
             ].join("\n"),
           );
         }
@@ -610,9 +714,11 @@ export function registerReadEditTools(
             `status=${payload.status}`,
             `target.activeFile=${payload.target.activeFile ?? "null"}`,
             `target.anchor=${payload.target.anchor.type}`,
-            `preview.before="${previewText(payload.preview.before)}"`,
-            `preview.after="${previewText(payload.preview.after)}"`,
-            `preview.afterTruncated=${payload.previewMeta.afterTruncated}`,
+            `changed.before="${previewText(payload.preview.before)}"`,
+            `changed.after="${previewText(payload.preview.after)}"`,
+            `context.before="${previewText(payload.preview.contextBefore)}"`,
+            `context.after="${previewText(payload.preview.contextAfter)}"`,
+            `changed.afterTruncated=${payload.previewMeta.changedAfterTruncated}`,
           ].join("\n"),
         );
       } catch (error) {

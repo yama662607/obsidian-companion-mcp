@@ -32,6 +32,8 @@ The public MCP surface is organized around the actual agent workflow:
 
 `read_note` and `read_active_context` both return machine-readable edit handoff payloads so agents can move from read to edit without reconstructing anchors manually.
 
+For long persisted notes, prefer `read_note` with `anchor.type = "line"` and follow `readMoreHint` to walk the document in stable line windows. For active editor buffers, rerun `read_active_context` with the same or a larger `maxChars` instead of relying on continuation hints, because the unsaved buffer can change between reads.
+
 ## Getting Started
 
 To use Obsidian Companion MCP, you need to set up both the Obsidian plugin and the MCP server.

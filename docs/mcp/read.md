@@ -73,7 +73,7 @@ Read part or all of a persisted Obsidian note and return a follow-up edit target
     "type": "heading",
     "headingPath": ["Action Items"]
   },
-  "maxChars": 6000,
+  "maxChars": 50000,
   "include": {
     "metadata": true,
     "documentMap": false
@@ -91,7 +91,7 @@ line window example:
     "startLine": 120,
     "endLine": 180
   },
-  "maxChars": 6000,
+  "maxChars": 50000,
   "include": {
     "metadata": false,
     "documentMap": false
@@ -170,14 +170,17 @@ line window example:
 }
 ```
 
-`maxChars` は本文 `content.text` の上限です。本文が切り詰められた場合、`content.text` は truncated になり、`editTarget.currentText` や `documentEditTarget.currentText` は省略されることがあります。編集の安全性は `revision` と resolved anchor で担保します。
+`maxChars` は本文 `content.text` の上限です。デフォルトは `50000` なので、通常利用では引っかかりにくくなっています。本文が切り詰められた場合、`content.text` は truncated になり、`editTarget.currentText` や `documentEditTarget.currentText` は省略されることがあります。編集の安全性は `revision` と resolved anchor で担保します。
 
 `readMoreHint` の挙動は anchor によって異なります。
 
-- `line` anchor: 次の同じ行数の window を返す。`maxChars` は据え置き
-- それ以外の anchor: 本文が `maxChars` で切り詰められたときだけ、同じ anchor でより大きい `maxChars` を提案する
+- `line` anchor: 次の同じ行数の window を返す。`maxChars` は据え置き。`reason` は `line_window`
+- `full` anchor: 今回完全に返せた最終行の次から、line window を返す。途中で切れた行は次 window の先頭で取り直す。`reason` は `full_continuation`
+- それ以外の anchor: 本文が `maxChars` で切り詰められたときだけ、同じ anchor でより大きい `maxChars` を提案する。`reason` は `expand_same_anchor`
 
 たとえば `startLine: 120, endLine: 180` で読んだ場合、次が存在すれば `readMoreHint.anchor` は `startLine: 181, endLine: 241` になります。
+
+`readMoreHint.returnedCompleteLines` は、今回完全に返せた行数です。`full` anchor では continuation window の基準に使われます。
 
 `metadata.frontmatter` と `documentMap` は別の response-side cap で bounded されます。
 
@@ -202,7 +205,7 @@ Read the active editor buffer and return edit targets for the current active con
 
 ```json
 {
-  "maxChars": 6000
+  "maxChars": 50000
 }
 ```
 
@@ -270,6 +273,7 @@ Read the active editor buffer and return edit targets for the current active con
 - no active editor なら `editTargets` は `null`
 - selection が空なら `selection` target は返さない
 - active editor 側では revision は持たない
-- `selection` / `content` は `maxChars` で bounded される
+- `selection` / `content` は `maxChars` で bounded される。default は `50000`、max は `100000`
 - 返却が truncated の場合、対応する `editTargets.*.currentText` は省略されることがある
+- `read_active_context` には `readMoreHint` は返さない。active editor はリアルタイムに変化するため、続きを見たい場合は同じ `maxChars` またはより大きい `maxChars` で再読する
 - `content[0].text` は compact summary で、raw `editTarget` JSON や本文全文は含めない

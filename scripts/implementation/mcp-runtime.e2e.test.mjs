@@ -441,6 +441,100 @@ test("mcp e2e: read_note line anchor returns the next same-size line window hint
       endLine: 7,
     },
     maxChars: 500,
+    reason: "line_window",
+    returnedCompleteLines: 3,
+  });
+});
+
+test("mcp e2e: read_note full anchor guides the remaining lines when truncated", async (t) => {
+  resetE2EVault();
+  const session = await createMcpClient();
+  t.after(async () => {
+    await session.close();
+  });
+
+  const notePath = "e2e/full-window.md";
+  const created = await session.client.callTool({
+    name: "create_note",
+    arguments: {
+      path: notePath,
+      content: Array.from(
+        { length: 20 },
+        (_, index) => `line ${String(index).padStart(2, "0")} ${"x".repeat(20)}`,
+      ).join("\n"),
+    },
+  });
+  assert.ok(!created.isError);
+
+  const read = await session.client.callTool({
+    name: "read_note",
+    arguments: {
+      note: notePath,
+      anchor: {
+        type: "full",
+      },
+      maxChars: 200,
+      include: {
+        metadata: false,
+        documentMap: false,
+      },
+    },
+  });
+  assert.ok(!read.isError);
+  assert.equal(read.structuredContent.content.truncated, true);
+  const completeLines = read.structuredContent.readMoreHint.returnedCompleteLines;
+  assert.equal(read.structuredContent.readMoreHint.reason, "full_continuation");
+  assert.equal(read.structuredContent.readMoreHint.anchor.type, "line");
+  assert.equal(read.structuredContent.readMoreHint.anchor.startLine, completeLines);
+  assert.equal(
+    read.structuredContent.readMoreHint.anchor.endLine,
+    Math.min(
+      read.structuredContent.readMoreHint.anchor.startLine + Math.max(completeLines, 1) - 1,
+      read.structuredContent.selection.totalLines - 1,
+    ),
+  );
+});
+
+test("mcp e2e: read_note full anchor retries a partially returned line at the next window", async (t) => {
+  resetE2EVault();
+  const session = await createMcpClient();
+  t.after(async () => {
+    await session.close();
+  });
+
+  const notePath = "e2e/full-window-partial-line.md";
+  const created = await session.client.callTool({
+    name: "create_note",
+    arguments: {
+      path: notePath,
+      content: ["short line", `very-long ${"x".repeat(500)}`, "tail line"].join("\n"),
+    },
+  });
+  assert.ok(!created.isError);
+
+  const read = await session.client.callTool({
+    name: "read_note",
+    arguments: {
+      note: notePath,
+      anchor: {
+        type: "full",
+      },
+      maxChars: 200,
+      include: {
+        metadata: false,
+        documentMap: false,
+      },
+    },
+  });
+
+  assert.ok(!read.isError);
+  assert.equal(read.structuredContent.content.truncated, true);
+  assert.equal(read.structuredContent.readMoreHint.reason, "full_continuation");
+  assert.equal(read.structuredContent.readMoreHint.returnedCompleteLines, 1);
+  assert.deepEqual(read.structuredContent.readMoreHint.anchor, {
+    type: "line",
+    startLine: 1,
+    endLine: 1,
   });
 });
 
@@ -765,11 +859,31 @@ test("mcp e2e: read_note and edit_note bound oversized responses", async (t) => 
   assert.equal(edited.structuredContent.previewMeta.beforeTruncated, true);
   assert.equal(edited.structuredContent.previewMeta.afterTruncated, true);
   assert.equal(
+    edited.structuredContent.previewMeta.changedBeforeTotalChars,
+    edited.structuredContent.previewMeta.beforeTotalChars,
+  );
+  assert.equal(
+    edited.structuredContent.previewMeta.changedAfterTotalChars,
+    edited.structuredContent.previewMeta.afterTotalChars,
+  );
+  assert.equal(
     edited.structuredContent.previewMeta.beforeTotalChars >
       edited.structuredContent.preview.before.length,
     true,
   );
   assert.equal(edited.structuredContent.previewMeta.afterTotalChars, replacement.length);
+  assert.ok(edited.structuredContent.preview.contextBefore.length <= 500);
+  assert.ok(edited.structuredContent.preview.contextAfter.length <= 500);
+  assert.equal(
+    edited.structuredContent.previewMeta.contextBeforeTotalChars >=
+      edited.structuredContent.preview.contextBefore.length,
+    true,
+  );
+  assert.equal(
+    edited.structuredContent.previewMeta.contextAfterTotalChars >=
+      edited.structuredContent.preview.contextAfter.length,
+    true,
+  );
   assert.ok(edited.content[0].text.length < 4_000);
 });
 
@@ -1046,6 +1160,74 @@ test("mcp e2e: read_active_context bounds large structured payloads", async (t) 
   assert.ok(active.content[0].text.length < 4_000);
   assert.match(active.content[0].text, /availableTargets=selection,cursor,document/);
   assert.doesNotMatch(active.content[0].text, /editTargets=/);
+});
+
+test("mcp e2e: read_active_context default maxChars matches read_note sizing policy", async (t) => {
+  resetE2EVault();
+  const repeatedLine = "0123456789 ".repeat(300);
+  const context = {
+    activeFile: "e2e/default-large-active.md",
+    cursor: { line: 0, ch: 0 },
+    selection: "",
+    selectionRange: null,
+    content: repeatedLine.repeat(3),
+  };
+
+  const plugin = await startMockPluginServer((request) => {
+    if (request.method === "health.ping") {
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
+        result: {
+          capabilities: ["health.ping", "editor.getContext"],
+          availability: "normal",
+          configDir: ".obsidian",
+          vaultPath: e2eVaultRoot,
+        },
+      };
+    }
+
+    if (request.method === "editor.getContext") {
+      return {
+        jsonrpc: "2.0",
+        id: request.id,
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
+        result: context,
+      };
+    }
+
+    return {
+      jsonrpc: "2.0",
+      id: request.id,
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
+      error: {
+        code: "METHOD_NOT_FOUND",
+        message: `Unsupported method: ${request.method}`,
+        data: { correlationId: "mock-corr" },
+      },
+    };
+  });
+
+  const session = await createMcpClient({
+    envOverrides: {
+      OBSIDIAN_PLUGIN_PORT: String(plugin.port),
+    },
+  });
+  t.after(async () => {
+    await session.close();
+    await plugin.close();
+  });
+
+  const active = await session.client.callTool({
+    name: "read_active_context",
+    arguments: {},
+  });
+
+  assert.ok(!active.isError);
+  assert.equal(active.structuredContent.contentTruncated, false);
+  assert.equal(active.structuredContent.content.length, context.content.length);
+  assert.equal(active.structuredContent.editTargets.document.currentText, context.content);
 });
 
 test("mcp e2e: move fallback preserves the plugin failure reason when filesystem fallback succeeds", async (t) => {

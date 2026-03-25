@@ -2680,14 +2680,14 @@ var editChangeSchema = z5.discriminatedUnion("type", [
 var readNoteInputSchema = z5.object({
   note: notePathSchema,
   anchor: jsonStringOr(noteAnchorSchema, "anchor").optional().default({ type: "full" }),
-  maxChars: z5.number().int().min(200).max(2e4).optional().default(6e3),
+  maxChars: z5.number().int().min(200).max(1e5).optional().default(5e4),
   include: z5.object({
     metadata: z5.boolean().optional().default(true),
     documentMap: z5.boolean().optional().default(false)
   }).optional().default({ metadata: true, documentMap: false })
 });
 var readActiveContextInputSchema = z5.object({
-  maxChars: z5.number().int().min(200).max(2e4).optional().default(6e3)
+  maxChars: z5.number().int().min(200).max(1e5).optional().default(5e4)
 });
 var editNoteInputSchema = z5.object({
   target: jsonStringOr(editTargetSchema, "target").describe(
@@ -2819,7 +2819,9 @@ var readNoteOutputSchema = z5.object({
   readMoreHint: z5.object({
     note: notePathSchema,
     anchor: noteAnchorSchema,
-    maxChars: z5.number().int().min(200).max(2e4)
+    maxChars: z5.number().int().min(200).max(1e5),
+    reason: z5.enum(["line_window", "full_continuation", "expand_same_anchor"]),
+    returnedCompleteLines: z5.number().int().min(0)
   }).nullable(),
   editTarget: noteEditTargetSchema,
   documentEditTarget: noteEditTargetSchema,
@@ -2877,13 +2879,23 @@ var editNoteOutputSchema = z5.object({
   revisionAfter: z5.string().nullable(),
   preview: z5.object({
     before: z5.string(),
-    after: z5.string()
+    after: z5.string(),
+    contextBefore: z5.string().optional(),
+    contextAfter: z5.string().optional()
   }),
   previewMeta: z5.object({
     beforeTotalChars: z5.number().int().min(0),
     afterTotalChars: z5.number().int().min(0),
     beforeTruncated: z5.boolean(),
-    afterTruncated: z5.boolean()
+    afterTruncated: z5.boolean(),
+    changedBeforeTotalChars: z5.number().int().min(0),
+    changedAfterTotalChars: z5.number().int().min(0),
+    contextBeforeTotalChars: z5.number().int().min(0),
+    contextAfterTotalChars: z5.number().int().min(0),
+    changedBeforeTruncated: z5.boolean(),
+    changedAfterTruncated: z5.boolean(),
+    contextBeforeTruncated: z5.boolean(),
+    contextAfterTruncated: z5.boolean()
   }).optional(),
   degraded: z5.boolean(),
   degradedReason: z5.string().nullable(),
@@ -3281,22 +3293,75 @@ function boundDocumentMap(documentMap) {
   };
 }
 function buildMutationPreview(beforeText, afterText) {
-  const before = truncateText(beforeText, RESPONSE_EXCERPT_MAX_CHARS);
-  const after = truncateText(afterText, RESPONSE_EXCERPT_MAX_CHARS);
+  const beforeLines = beforeText.split("\n");
+  const afterLines = afterText.split("\n");
+  const sharedPrefixLines = Math.min(beforeLines.length, afterLines.length);
+  let prefix = 0;
+  while (prefix < sharedPrefixLines && beforeLines[prefix] === afterLines[prefix]) {
+    prefix += 1;
+  }
+  let suffix = 0;
+  while (suffix < beforeLines.length - prefix && suffix < afterLines.length - prefix && beforeLines[beforeLines.length - 1 - suffix] === afterLines[afterLines.length - 1 - suffix]) {
+    suffix += 1;
+  }
+  const beforeChangedText = beforeLines.slice(prefix, beforeLines.length - suffix).join("\n");
+  const afterChangedText = afterLines.slice(prefix, afterLines.length - suffix).join("\n");
+  const contextStart = Math.max(0, prefix - 1);
+  const beforeContextEnd = Math.min(beforeLines.length, beforeLines.length - suffix + 1);
+  const afterContextEnd = Math.min(afterLines.length, afterLines.length - suffix + 1);
+  const beforeContextText = beforeChangedText.length > 0 ? beforeLines.slice(contextStart, beforeContextEnd).join("\n") : beforeText;
+  const afterContextText = afterChangedText.length > 0 ? afterLines.slice(contextStart, afterContextEnd).join("\n") : afterText;
+  const before = truncateText(beforeChangedText || beforeText, RESPONSE_EXCERPT_MAX_CHARS);
+  const after = truncateText(afterChangedText || afterText, RESPONSE_EXCERPT_MAX_CHARS);
+  const contextBefore = truncateText(beforeContextText, RESPONSE_EXCERPT_MAX_CHARS);
+  const contextAfter = truncateText(afterContextText, RESPONSE_EXCERPT_MAX_CHARS);
   return {
     preview: {
       before: before.text,
-      after: after.text
+      after: after.text,
+      contextBefore: contextBefore.text,
+      contextAfter: contextAfter.text
     },
     previewMeta: {
       beforeTotalChars: before.totalChars,
       afterTotalChars: after.totalChars,
       beforeTruncated: before.truncated,
-      afterTruncated: after.truncated
+      afterTruncated: after.truncated,
+      changedBeforeTotalChars: before.totalChars,
+      changedAfterTotalChars: after.totalChars,
+      contextBeforeTotalChars: contextBefore.totalChars,
+      contextAfterTotalChars: contextAfter.totalChars,
+      changedBeforeTruncated: before.truncated,
+      changedAfterTruncated: after.truncated,
+      contextBeforeTruncated: contextBefore.truncated,
+      contextAfterTruncated: contextAfter.truncated
     }
   };
 }
-function buildReadMoreHint(note, resolved, maxChars, contentTruncated) {
+function countCompleteLines(fullText, returnedText) {
+  if (returnedText.length === 0) {
+    return 0;
+  }
+  let completeLines = 0;
+  let offset = 0;
+  while (offset < fullText.length) {
+    const nextNewline = fullText.indexOf("\n", offset);
+    if (nextNewline === -1) {
+      if (returnedText.length >= fullText.length) {
+        completeLines += 1;
+      }
+      break;
+    }
+    const lineEndOffset = nextNewline + 1;
+    if (returnedText.length < lineEndOffset) {
+      break;
+    }
+    completeLines += 1;
+    offset = lineEndOffset;
+  }
+  return completeLines;
+}
+function buildReadMoreHint(note, resolved, maxChars, returnedText, contentTruncated) {
   if (resolved.anchor.type === "line") {
     const windowSize = resolved.anchor.endLine - resolved.anchor.startLine + 1;
     const nextStartLine = resolved.anchor.endLine + 1;
@@ -3310,16 +3375,39 @@ function buildReadMoreHint(note, resolved, maxChars, contentTruncated) {
         startLine: nextStartLine,
         endLine: Math.min(nextStartLine + windowSize - 1, resolved.totalLines - 1)
       },
-      maxChars
+      maxChars,
+      reason: "line_window",
+      returnedCompleteLines: windowSize
     };
   }
   if (!contentTruncated) {
     return null;
   }
+  const returnedCompleteLines = countCompleteLines(resolved.text, returnedText);
+  if (resolved.anchor.type === "full") {
+    const startLine = Math.min(returnedCompleteLines, Math.max(resolved.totalLines - 1, 0));
+    if (startLine > resolved.totalLines - 1) {
+      return null;
+    }
+    const windowSize = Math.max(returnedCompleteLines, 1);
+    return {
+      note,
+      anchor: {
+        type: "line",
+        startLine,
+        endLine: Math.min(startLine + windowSize - 1, resolved.totalLines - 1)
+      },
+      maxChars,
+      reason: "full_continuation",
+      returnedCompleteLines
+    };
+  }
   return {
     note,
     anchor: resolved.anchor,
-    maxChars: Math.min(maxChars * 2, 2e4)
+    maxChars: Math.min(maxChars * 2, 1e5),
+    reason: "expand_same_anchor",
+    returnedCompleteLines
   };
 }
 function registerReadEditTools(server, noteService, editorService) {
@@ -3388,6 +3476,7 @@ function registerReadEditTools(server, noteService, editorService) {
             params.note,
             resolved,
             params.maxChars,
+            truncated.text,
             truncated.truncated
           ),
           degraded: result.degraded,
@@ -3544,8 +3633,9 @@ function registerReadEditTools(server, noteService, editorService) {
                 `status=${payload3.status}`,
                 `target.note=${payload3.target.note}`,
                 `target.anchor=${anchorToText(payload3.target.anchor)}`,
-                `preview.before="${previewText(payload3.preview.before)}"`,
-                `preview.beforeTruncated=${payload3.previewMeta.beforeTruncated}`
+                `changed.before="${previewText(payload3.preview.before)}"`,
+                `context.before="${previewText(payload3.preview.contextBefore)}"`,
+                `changed.beforeTruncated=${payload3.previewMeta.changedBeforeTruncated}`
               ].join("\n")
             );
           }
@@ -3582,9 +3672,11 @@ function registerReadEditTools(server, noteService, editorService) {
               `status=${payload2.status}`,
               `target.note=${payload2.target.note}`,
               `target.anchor=${anchorToText(payload2.target.anchor)}`,
-              `preview.before="${previewText(payload2.preview.before)}"`,
-              `preview.after="${previewText(payload2.preview.after)}"`,
-              `preview.afterTruncated=${payload2.previewMeta.afterTruncated}`
+              `changed.before="${previewText(payload2.preview.before)}"`,
+              `changed.after="${previewText(payload2.preview.after)}"`,
+              `context.before="${previewText(payload2.preview.contextBefore)}"`,
+              `context.after="${previewText(payload2.preview.contextAfter)}"`,
+              `changed.afterTruncated=${payload2.previewMeta.changedAfterTruncated}`
             ].join("\n")
           );
         }
@@ -3630,8 +3722,9 @@ function registerReadEditTools(server, noteService, editorService) {
               `status=${payload2.status}`,
               `target.activeFile=${payload2.target.activeFile ?? "null"}`,
               `target.anchor=${payload2.target.anchor.type}`,
-              `preview.after="${previewText(payload2.preview.after)}"`,
-              `preview.afterTruncated=${payload2.previewMeta.afterTruncated}`
+              `changed.after="${previewText(payload2.preview.after)}"`,
+              `context.after="${previewText(payload2.preview.contextAfter)}"`,
+              `changed.afterTruncated=${payload2.previewMeta.changedAfterTruncated}`
             ].join("\n")
           );
         }
@@ -3665,8 +3758,9 @@ function registerReadEditTools(server, noteService, editorService) {
               `status=${payload2.status}`,
               `target.activeFile=${payload2.target.activeFile ?? "null"}`,
               `target.anchor=${payload2.target.anchor.type}`,
-              `preview.before="${previewText(payload2.preview.before)}"`,
-              `preview.beforeTruncated=${payload2.previewMeta.beforeTruncated}`
+              `changed.before="${previewText(payload2.preview.before)}"`,
+              `context.before="${previewText(payload2.preview.contextBefore)}"`,
+              `changed.beforeTruncated=${payload2.previewMeta.changedBeforeTruncated}`
             ].join("\n")
           );
         }
@@ -3700,9 +3794,11 @@ function registerReadEditTools(server, noteService, editorService) {
             `status=${payload.status}`,
             `target.activeFile=${payload.target.activeFile ?? "null"}`,
             `target.anchor=${payload.target.anchor.type}`,
-            `preview.before="${previewText(payload.preview.before)}"`,
-            `preview.after="${previewText(payload.preview.after)}"`,
-            `preview.afterTruncated=${payload.previewMeta.afterTruncated}`
+            `changed.before="${previewText(payload.preview.before)}"`,
+            `changed.after="${previewText(payload.preview.after)}"`,
+            `context.before="${previewText(payload.preview.contextBefore)}"`,
+            `context.after="${previewText(payload.preview.contextAfter)}"`,
+            `changed.afterTruncated=${payload.previewMeta.changedAfterTruncated}`
           ].join("\n")
         );
       } catch (error) {

@@ -172,7 +172,9 @@ v1 では regex はサポートしません。
   "revisionAfter": "rev_def456",
   "preview": {
     "before": "- old line",
-    "after": "- new line"
+    "after": "- new line",
+    "contextBefore": "## Action Items\n- old line\n- keep this",
+    "contextAfter": "## Action Items\n- new line\n- keep this"
   },
   "previewMeta": {
     "beforeTotalChars": 10,
@@ -216,13 +218,23 @@ active editor example:
   "revisionAfter": null,
   "preview": {
     "before": "selected text",
-    "after": "rewritten text"
+    "after": "rewritten text",
+    "contextBefore": "alpha selected text beta",
+    "contextAfter": "alpha rewritten text beta"
   },
   "previewMeta": {
     "beforeTotalChars": 13,
     "afterTotalChars": 14,
     "beforeTruncated": false,
-    "afterTruncated": false
+    "afterTruncated": false,
+    "changedBeforeTotalChars": 13,
+    "changedAfterTotalChars": 14,
+    "contextBeforeTotalChars": 24,
+    "contextAfterTotalChars": 25,
+    "changedBeforeTruncated": false,
+    "changedAfterTruncated": false,
+    "contextBeforeTruncated": false,
+    "contextAfterTruncated": false
   },
   "degraded": false,
   "degradedReason": null,
@@ -234,9 +246,9 @@ active editor example:
 }
 ```
 
-`preview.before` / `preview.after` は confirmation 用の excerpt で、各 500 chars までです。全文は返しません。全文確認が必要なら `readBack` に従って `read_note` / `read_active_context` を再実行します。
+`preview.before` / `preview.after` は変更された部分の excerpt で、各 500 chars までです。`preview.contextBefore` / `preview.contextAfter` はその前後文脈の excerpt です。全文は返しません。全文確認が必要なら `readBack` に従って `read_note` / `read_active_context` を再実行します。
 
-`previewMeta` は excerpt の元になった全文長と、excerpt 化で truncation が発生したかを示します。
+`previewMeta` は preview 各断片の元サイズと truncation を示します。`before*` / `after*` は後方互換のため残っており、`changedBefore*` / `changedAfter*` と同義です。全文長ではなく、「変更部分 excerpt」または「前後文脈 excerpt」の元サイズである点に注意してください。
 
 ## Failure Model
 

@@ -133,7 +133,7 @@ export const editChangeSchema = z.discriminatedUnion("type", [
 export const readNoteInputSchema = z.object({
   note: notePathSchema,
   anchor: jsonStringOr(noteAnchorSchema, "anchor").optional().default({ type: "full" }),
-  maxChars: z.number().int().min(200).max(20_000).optional().default(6_000),
+  maxChars: z.number().int().min(200).max(100_000).optional().default(50_000),
   include: z
     .object({
       metadata: z.boolean().optional().default(true),
@@ -144,7 +144,7 @@ export const readNoteInputSchema = z.object({
 });
 
 export const readActiveContextInputSchema = z.object({
-  maxChars: z.number().int().min(200).max(20_000).optional().default(6_000),
+  maxChars: z.number().int().min(200).max(100_000).optional().default(50_000),
 });
 
 export const editNoteInputSchema = z.object({
@@ -312,7 +312,9 @@ export const readNoteOutputSchema = z.object({
     .object({
       note: notePathSchema,
       anchor: noteAnchorSchema,
-      maxChars: z.number().int().min(200).max(20_000),
+      maxChars: z.number().int().min(200).max(100_000),
+      reason: z.enum(["line_window", "full_continuation", "expand_same_anchor"]),
+      returnedCompleteLines: z.number().int().min(0),
     })
     .nullable(),
   editTarget: noteEditTargetSchema,
@@ -376,6 +378,8 @@ export const editNoteOutputSchema = z.object({
   preview: z.object({
     before: z.string(),
     after: z.string(),
+    contextBefore: z.string().optional(),
+    contextAfter: z.string().optional(),
   }),
   previewMeta: z
     .object({
@@ -383,6 +387,14 @@ export const editNoteOutputSchema = z.object({
       afterTotalChars: z.number().int().min(0),
       beforeTruncated: z.boolean(),
       afterTruncated: z.boolean(),
+      changedBeforeTotalChars: z.number().int().min(0),
+      changedAfterTotalChars: z.number().int().min(0),
+      contextBeforeTotalChars: z.number().int().min(0),
+      contextAfterTotalChars: z.number().int().min(0),
+      changedBeforeTruncated: z.boolean(),
+      changedAfterTruncated: z.boolean(),
+      contextBeforeTruncated: z.boolean(),
+      contextAfterTruncated: z.boolean(),
     })
     .optional(),
   degraded: z.boolean(),
